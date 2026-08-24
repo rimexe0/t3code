@@ -146,6 +146,7 @@ import { cn } from "~/lib/utils";
 import { EnvironmentMachineIcon } from "./EnvironmentMachineIcon";
 import { ProjectEnvironmentBadge } from "./ProjectEnvironmentBadge";
 import { buildThreadActionMenuItems } from "./threadActionMenu.logic";
+import { openChatThreadInSplit } from "../chatWorkspaceStore";
 import {
   animateSidebarLayoutChanges,
   applySidebarThreadDrop,
@@ -4036,6 +4037,10 @@ export default function Sidebar() {
             if (projectGroup) openProjectSettings(projectGroup);
             return;
           }
+          case "open-in-split":
+            openChatThreadInSplit(threadRef);
+            navigateToThread(threadRef);
+            return;
           case "new-thread-on-branch": {
             // Explicit branch carry-over: reuse the thread's worktree when it
             // has one, otherwise its branch on the local checkout.

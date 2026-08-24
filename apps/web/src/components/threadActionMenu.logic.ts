@@ -9,6 +9,7 @@ import type { SnoozePreset } from "@t3tools/client-runtime/state/thread-settled"
 export type ThreadActionMenuId =
   | "new-thread-on-branch"
   | "project-settings"
+  | "open-in-split"
   | "pin"
   | "unpin"
   | "settle"
@@ -53,6 +54,7 @@ export function buildThreadActionMenuItems(
   state: ThreadActionMenuState,
 ): ReadonlyArray<ContextMenuItem<ThreadActionMenuId>> {
   return [
+    { id: "open-in-split", label: "Open in split" },
     ...(state.branch
       ? [
           {

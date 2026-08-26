@@ -225,14 +225,14 @@ function PaneTab({
       <button
         type="button"
         aria-pressed={isActivePane}
-        className="flex min-w-0 flex-1 items-center gap-1.5 rounded-s-md px-2 py-1.5 text-left focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary/70"
+        className="flex min-w-0 flex-1 items-center gap-1 rounded-s-md px-1.5 py-1 text-left focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary/70"
         onClick={onActivate}
         title={`${title}${projectTitle ? ` · ${projectTitle}` : ""}`}
       >
         <span
           aria-hidden
           className={cn(
-            "inline-flex size-4.5 shrink-0 items-center justify-center rounded border text-[10px] font-semibold tabular-nums",
+            "inline-flex size-4 shrink-0 items-center justify-center rounded border text-[10px] font-semibold tabular-nums",
             isActivePane
               ? "border-primary/45 bg-primary/15 text-primary"
               : "border-border/70 bg-muted/60 text-muted-foreground",
@@ -250,7 +250,7 @@ function PaneTab({
       <button
         type="button"
         aria-label={`Close pane ${paneIndex}`}
-        className="mr-1 inline-flex size-5 shrink-0 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary/70"
+        className="mr-0.5 inline-flex size-4 shrink-0 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary/70"
         onClick={onClose}
       >
         <XIcon aria-hidden className="size-3" />
@@ -271,11 +271,11 @@ function PaneStrip({
   readonly onClose: (pane: ChatWorkspacePane) => void;
 }) {
   return (
-    <div className="@container/workspace-tabs flex min-h-10 min-w-0 shrink-0 items-center border-b border-border/60 bg-muted/20 px-2">
+    <div className="@container/workspace-tabs flex min-h-0 min-w-0 shrink-0 items-center border-b border-border/60 bg-muted/20 px-0">
       <div
         role="toolbar"
         aria-label="Open chat panes"
-        className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto py-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+        className="flex min-w-0 flex-1 items-center gap-0 overflow-x-auto py-0 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
       >
         {panes.map((pane, index) => (
           <PaneTab
@@ -288,7 +288,7 @@ function PaneStrip({
           />
         ))}
       </div>
-      <span className="hidden shrink-0 px-2 text-[11px] text-muted-foreground @2xl/workspace-tabs:inline">
+      <span className="hidden shrink-0 px-1.5 text-[11px] text-muted-foreground @2xl/workspace-tabs:inline">
         {panes.length} {panes.length === 1 ? "pane" : "panes"}
       </span>
     </div>

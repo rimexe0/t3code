@@ -229,7 +229,6 @@ import {
   Minimize2Icon,
   PaperclipIcon,
   WifiOffIcon,
-  XIcon,
 } from "lucide-react";
 import { cn, randomHex, randomUUID } from "~/lib/utils";
 import { stackedThreadToast, toastManager } from "./ui/toast";

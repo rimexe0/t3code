@@ -67,22 +67,21 @@ describe("chatWorkspaceStore", () => {
     expect(useChatWorkspaceStore.getState().activePaneId).toBe(secondPaneId);
   });
 
-  it("keeps secondary panes while replacing the active route target", () => {
+  it("keeps secondary panes while reconciling the active route target", () => {
     const store = useChatWorkspaceStore.getState();
     store.addPane({ kind: "server", threadRef: THREAD_A });
-    const secondPaneId = store.addPane({ kind: "server", threadRef: THREAD_B });
+    store.addPane({ kind: "server", threadRef: THREAD_B });
 
-    const replacementPaneId = store.replaceActivePane({ kind: "server", threadRef: THREAD_C });
+    useChatWorkspaceStore.getState().reconcileRouteTarget({ kind: "server", threadRef: THREAD_C });
     const state = useChatWorkspaceStore.getState();
 
-    expect(replacementPaneId).toBe(
-      chatWorkspaceTargetKey({ kind: "server", threadRef: THREAD_C }),
-    );
     expect(state.panes.map((pane) => pane.id)).toEqual([
       chatWorkspaceTargetKey({ kind: "server", threadRef: THREAD_A }),
-      replacementPaneId,
+      chatWorkspaceTargetKey({ kind: "server", threadRef: THREAD_C }),
     ]);
-    expect(state.activePaneId).toBe(replacementPaneId);
+    expect(state.activePaneId).toBe(
+      chatWorkspaceTargetKey({ kind: "server", threadRef: THREAD_C }),
+    );
   });
 
   it("clamps the persisted split ratio to usable pane bounds", () => {

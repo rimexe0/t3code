@@ -23,12 +23,12 @@ import { buildDraftThreadRouteParams, buildThreadRouteParams } from "../threadRo
 import ChatView from "./ChatView";
 import { DiffWorkerPoolProvider } from "./DiffWorkerPoolProvider";
 import { SidebarInset } from "./ui/sidebar";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
 import { useMediaQuery } from "../hooks/useMediaQuery";
 import { cn } from "~/lib/utils";
 
 export interface ChatWorkspacePaneRenderOptions {
   readonly paneId: string;
-  readonly target: ChatWorkspaceTarget;
   readonly paneIndex: number;
   readonly paneCount: number;
   readonly isActivePane: boolean;
@@ -59,7 +59,7 @@ function navigateToTarget(
   });
 }
 
-function WorkspaceDraftPane({
+function WorkspacePane({
   pane,
   paneIndex,
   paneCount,
@@ -77,6 +77,21 @@ function WorkspaceDraftPane({
     draftId ? store.getDraftSession(draftId) : null,
   );
 
+  if (pane.target.kind === "server") {
+    return (
+      <ChatView
+        paneId={pane.id}
+        paneIndex={paneIndex}
+        paneCount={paneCount}
+        isActivePane={isActivePane}
+        onClosePane={onClosePane}
+        environmentId={pane.target.threadRef.environmentId}
+        threadId={pane.target.threadRef.threadId}
+        routeKind="server"
+      />
+    );
+  }
+
   if (!draftId || !draftSession) {
     return null;
   }
@@ -92,37 +107,6 @@ function WorkspaceDraftPane({
       environmentId={draftSession.environmentId}
       threadId={draftSession.threadId}
       routeKind="draft"
-    />
-  );
-}
-
-function WorkspaceServerPane({
-  pane,
-  paneIndex,
-  paneCount,
-  isActivePane,
-  onClosePane,
-}: {
-  readonly pane: ChatWorkspacePane;
-  readonly paneIndex: number;
-  readonly paneCount: number;
-  readonly isActivePane: boolean;
-  readonly onClosePane: () => void;
-}) {
-  if (pane.target.kind !== "server") {
-    return null;
-  }
-
-  return (
-    <ChatView
-      paneId={pane.id}
-      paneIndex={paneIndex}
-      paneCount={paneCount}
-      isActivePane={isActivePane}
-      onClosePane={onClosePane}
-      environmentId={pane.target.threadRef.environmentId}
-      threadId={pane.target.threadRef.threadId}
-      routeKind="server"
     />
   );
 }
@@ -222,31 +206,39 @@ function PaneTab({
           : "border-transparent text-muted-foreground hover:border-border/70 hover:bg-accent/50 hover:text-foreground",
       )}
     >
-      <button
-        type="button"
-        aria-pressed={isActivePane}
-        className="flex min-w-0 flex-1 items-center gap-1 rounded-s-md px-1.5 py-1 text-left focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary/70"
-        onClick={onActivate}
-        title={`${title}${projectTitle ? ` · ${projectTitle}` : ""}`}
-      >
-        <span
-          aria-hidden
-          className={cn(
-            "inline-flex size-4 shrink-0 items-center justify-center rounded border text-[10px] font-semibold tabular-nums",
-            isActivePane
-              ? "border-primary/45 bg-primary/15 text-primary"
-              : "border-border/70 bg-muted/60 text-muted-foreground",
-          )}
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <button
+              type="button"
+              aria-pressed={isActivePane}
+              className="flex min-w-0 flex-1 items-center gap-1 rounded-s-md px-1.5 py-1 text-left focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary/70"
+              onClick={onActivate}
+            />
+          }
         >
-          {paneIndex}
-        </span>
-        <span className="min-w-0 truncate font-medium">{title}</span>
-        {projectTitle ? (
-          <span className="hidden min-w-0 truncate text-muted-foreground @2xl/workspace-tabs:inline">
-            · {projectTitle}
+          <span
+            aria-hidden
+            className={cn(
+              "inline-flex size-4 shrink-0 items-center justify-center rounded border text-[10px] font-semibold tabular-nums",
+              isActivePane
+                ? "border-primary/45 bg-primary/15 text-primary"
+                : "border-border/70 bg-muted/60 text-muted-foreground",
+            )}
+          >
+            {paneIndex}
           </span>
-        ) : null}
-      </button>
+          <span className="min-w-0 truncate font-medium">{title}</span>
+          {projectTitle ? (
+            <span className="hidden min-w-0 truncate text-muted-foreground @2xl/workspace-tabs:inline">
+              · {projectTitle}
+            </span>
+          ) : null}
+        </TooltipTrigger>
+        <TooltipPopup side="top">
+          {projectTitle ? `${title} · ${projectTitle}` : title}
+        </TooltipPopup>
+      </Tooltip>
       <button
         type="button"
         aria-label={`Close pane ${paneIndex}`}
@@ -296,14 +288,12 @@ function PaneStrip({
 }
 
 function PaneFrame({
-  pane,
   paneIndex,
   paneCount,
   isActivePane,
   onActivate,
   children,
 }: {
-  readonly pane: ChatWorkspacePane;
   readonly paneIndex: number;
   readonly paneCount: number;
   readonly isActivePane: boolean;
@@ -313,9 +303,6 @@ function PaneFrame({
   return (
     <section
       aria-label={`Chat pane ${paneIndex} of ${paneCount}`}
-      data-chat-pane="true"
-      data-chat-pane-active={isActivePane ? "true" : "false"}
-      data-chat-pane-id={pane.id}
       className={cn(
         "relative flex min-h-0 min-w-0 overflow-hidden border border-border/50 transition-[border-color,box-shadow] duration-150 [&+section]:border-l-2",
         isActivePane
@@ -473,38 +460,26 @@ export function ChatWorkspace({ activeTarget, renderActivePane }: ChatWorkspaceP
               const onActivate = () => activatePane(pane);
               const onClose = () => handleClosePane(pane);
               const content =
-                pane.id === activeTargetKey
-                  ? renderActivePane({
-                      paneId: pane.id,
-                      target: pane.target,
-                      paneIndex,
-                      paneCount,
-                      isActivePane,
-                      onClosePane: onClose,
-                    })
-                  : pane.target.kind === "draft"
-                    ? (
-                        <WorkspaceDraftPane
-                          pane={pane}
-                          paneIndex={paneIndex}
-                          paneCount={paneCount}
-                          isActivePane={isActivePane}
-                          onClosePane={onClose}
-                        />
-                      )
-                    : (
-                        <WorkspaceServerPane
-                          pane={pane}
-                          paneIndex={paneIndex}
-                          paneCount={paneCount}
-                          isActivePane={isActivePane}
-                          onClosePane={onClose}
-                        />
-                      );
+                pane.id === activeTargetKey ? (
+                  renderActivePane({
+                    paneId: pane.id,
+                    paneIndex,
+                    paneCount,
+                    isActivePane,
+                    onClosePane: onClose,
+                  })
+                ) : (
+                  <WorkspacePane
+                    pane={pane}
+                    paneIndex={paneIndex}
+                    paneCount={paneCount}
+                    isActivePane={isActivePane}
+                    onClosePane={onClose}
+                  />
+                );
               return (
                 <PaneFrame
                   key={pane.id}
-                  pane={pane}
                   paneIndex={paneIndex}
                   paneCount={paneCount}
                   isActivePane={isActivePane}

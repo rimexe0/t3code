@@ -4868,9 +4868,9 @@ export default function ChatView(props: ChatViewProps) {
   useEffect(
     () =>
       subscribePreviewAction((action) => {
-        if (action === "toggle-panel") togglePreviewPanel();
+        if (action === "toggle-panel" && isActivePane) togglePreviewPanel();
       }),
-    [togglePreviewPanel],
+    [isActivePane, togglePreviewPanel],
   );
   const persistThreadSettingsForNextTurn = useCallback(
     async (input: {
@@ -8492,6 +8492,7 @@ export default function ChatView(props: ChatViewProps) {
         <PreviewPanel
           mode="embedded"
           threadRef={activeThreadRef}
+          isActivePane={isActivePane}
           tabId={renderedRightPanelSurface.resourceId}
           configuredUrls={configuredPreviewUrls}
           visible={rightPanelOpen}

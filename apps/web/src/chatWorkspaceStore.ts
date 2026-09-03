@@ -29,11 +29,13 @@ interface ChatWorkspaceStoreState {
   readonly panes: ReadonlyArray<ChatWorkspacePane>;
   readonly activePaneId: string | null;
   readonly splitRatio: number;
+  readonly draggingThreadRef: ScopedThreadRef | null;
   readonly addPane: (target: ChatWorkspaceTarget) => string;
   readonly focusPane: (paneId: string) => void;
   readonly closePane: (paneId: string) => void;
   readonly reconcileRouteTarget: (target: ChatWorkspaceTarget) => void;
   readonly setSplitRatio: (ratio: number) => void;
+  readonly setDraggingThreadRef: (threadRef: ScopedThreadRef | null) => void;
   readonly reset: () => void;
 }
 
@@ -57,6 +59,13 @@ function paneForTarget(
     panes.find((pane) => chatWorkspaceTargetKey(pane.target) === chatWorkspaceTargetKey(target)) ??
     null
   );
+}
+
+export function isChatWorkspaceTargetOpen(
+  panes: ReadonlyArray<ChatWorkspacePane>,
+  target: ChatWorkspaceTarget,
+): boolean {
+  return paneForTarget(panes, target) !== null;
 }
 
 function normalizeTarget(value: unknown): ChatWorkspaceTarget | null {
@@ -141,6 +150,7 @@ const initialWorkspaceState = {
   panes: [] as ReadonlyArray<ChatWorkspacePane>,
   activePaneId: null as string | null,
   splitRatio: DEFAULT_CHAT_WORKSPACE_SPLIT_RATIO,
+  draggingThreadRef: null as ScopedThreadRef | null,
 };
 
 function getNextActivePaneId(
@@ -220,6 +230,8 @@ export const useChatWorkspaceStore = create<ChatWorkspaceStoreState>()(
           const splitRatio = clampSplitRatio(ratio);
           return state.splitRatio === splitRatio ? state : { splitRatio };
         }),
+
+      setDraggingThreadRef: (threadRef) => set({ draggingThreadRef: threadRef }),
 
       reset: () => set(initialWorkspaceState),
     }),

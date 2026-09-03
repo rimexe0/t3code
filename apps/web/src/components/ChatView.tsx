@@ -707,10 +707,7 @@ type ChatViewProps =
       forceExpandedMobileComposer?: boolean;
       threadSyncPhase?: ThreadSyncPhase | null;
       paneId?: string;
-      paneIndex?: number;
-      paneCount?: number;
       isActivePane?: boolean;
-      onClosePane?: () => void;
       routeKind: "server";
       draftId?: never;
     }
@@ -722,10 +719,7 @@ type ChatViewProps =
       forceExpandedMobileComposer?: boolean;
       threadSyncPhase?: never;
       paneId?: string;
-      paneIndex?: number;
-      paneCount?: number;
       isActivePane?: boolean;
-      onClosePane?: () => void;
       routeKind: "draft";
       draftId: DraftId;
     };
@@ -1442,10 +1436,7 @@ export default function ChatView(props: ChatViewProps) {
     reserveTitleBarControlInset = true,
     forceExpandedMobileComposer = false,
     paneId,
-    paneIndex,
-    paneCount,
     isActivePane = true,
-    onClosePane,
   } = props;
   const draftId = routeKind === "draft" ? props.draftId : null;
   const threadSyncPhase = routeKind === "server" ? (props.threadSyncPhase ?? null) : null;
@@ -8492,18 +8483,6 @@ export default function ChatView(props: ChatViewProps) {
           />
         </span>
       ) : null}
-      {onClosePane ? (
-          <Button
-            aria-label="Close chat pane"
-            title="Close chat pane"
-            className="size-7"
-          size="icon-sm"
-          variant="ghost"
-          onClick={onClosePane}
-        >
-          <XIcon className="size-3.5" />
-        </Button>
-      ) : null}
       <div className="pointer-events-auto flex h-full items-center">{panelToggleControls}</div>
     </div>
   );
@@ -8732,9 +8711,6 @@ export default function ChatView(props: ChatViewProps) {
             {...(!supportsPullRequests || activeProjectRepository === null
               ? {}
               : { onOpenPullRequest: openProjectPullRequest })}
-            paneIndex={paneIndex}
-            paneCount={paneCount}
-            isActivePane={isActivePane}
             activeThreadEnvironmentId={activeThread.environmentId}
             activeThreadId={activeThread.id}
             {...(routeKind === "draft" && draftId ? { draftId } : {})}

@@ -78,13 +78,10 @@ function DraftChatThreadRouteView() {
   return (
     <ChatWorkspace
       activeTarget={{ kind: "draft", draftId }}
-      renderActivePane={({ paneId, paneIndex, paneCount, isActivePane, onClosePane }) => (
+      renderActivePane={({ paneId, isActivePane }) => (
         <ChatView
           paneId={paneId}
-          paneIndex={paneIndex}
-          paneCount={paneCount}
           isActivePane={isActivePane}
-          onClosePane={onClosePane}
           draftId={draftId}
           environmentId={draftSession.environmentId}
           threadId={draftSession.threadId}

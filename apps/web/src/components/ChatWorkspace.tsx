@@ -1,6 +1,7 @@
 import { scopeProjectRef } from "@t3tools/client-runtime/environment";
 import { useNavigate } from "@tanstack/react-router";
 import {
+  type DragEvent as ReactDragEvent,
   useCallback,
   useEffect,
   useRef,
@@ -9,10 +10,12 @@ import {
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
 } from "react";
-import { XIcon } from "lucide-react";
+import { Columns2Icon, XIcon } from "lucide-react";
 
 import {
   chatWorkspaceTargetKey,
+  isChatWorkspaceTargetOpen,
+  openChatThreadInSplit,
   useChatWorkspaceStore,
   type ChatWorkspacePane,
   type ChatWorkspaceTarget,
@@ -32,7 +35,6 @@ export interface ChatWorkspacePaneRenderOptions {
   readonly paneIndex: number;
   readonly paneCount: number;
   readonly isActivePane: boolean;
-  readonly onClosePane: () => void;
 }
 
 interface ChatWorkspaceProps {
@@ -61,16 +63,10 @@ function navigateToTarget(
 
 function WorkspacePane({
   pane,
-  paneIndex,
-  paneCount,
   isActivePane,
-  onClosePane,
 }: {
   readonly pane: ChatWorkspacePane;
-  readonly paneIndex: number;
-  readonly paneCount: number;
   readonly isActivePane: boolean;
-  readonly onClosePane: () => void;
 }) {
   const draftId = pane.target.kind === "draft" ? pane.target.draftId : null;
   const draftSession = useComposerDraftStore((store) =>
@@ -81,10 +77,7 @@ function WorkspacePane({
     return (
       <ChatView
         paneId={pane.id}
-        paneIndex={paneIndex}
-        paneCount={paneCount}
         isActivePane={isActivePane}
-        onClosePane={onClosePane}
         environmentId={pane.target.threadRef.environmentId}
         threadId={pane.target.threadRef.threadId}
         routeKind="server"
@@ -99,10 +92,7 @@ function WorkspacePane({
   return (
     <ChatView
       paneId={pane.id}
-      paneIndex={paneIndex}
-      paneCount={paneCount}
       isActivePane={isActivePane}
-      onClosePane={onClosePane}
       draftId={draftId}
       environmentId={draftSession.environmentId}
       threadId={draftSession.threadId}
@@ -200,7 +190,7 @@ function PaneTab({
       role="group"
       aria-label={`Pane ${paneIndex}: ${title}`}
       className={cn(
-        "flex min-w-0 max-w-72 shrink-0 items-center rounded-md border text-xs transition-colors",
+        "flex min-w-0 max-w-72 shrink-0 items-center overflow-hidden rounded-md border text-xs transition-colors",
         isActivePane
           ? "border-primary/45 bg-primary/10 text-foreground"
           : "border-transparent text-muted-foreground hover:border-border/70 hover:bg-accent/50 hover:text-foreground",
@@ -212,23 +202,12 @@ function PaneTab({
             <button
               type="button"
               aria-pressed={isActivePane}
-              className="flex min-w-0 flex-1 items-center gap-1 rounded-s-md px-1.5 py-1 text-left focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary/70"
+              className="flex min-w-0 flex-1 items-center gap-1 overflow-hidden rounded-s-md px-1.5 py-1 text-left focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary/70"
               onClick={onActivate}
             />
           }
         >
-          <span
-            aria-hidden
-            className={cn(
-              "inline-flex size-4 shrink-0 items-center justify-center rounded border text-[10px] font-semibold tabular-nums",
-              isActivePane
-                ? "border-primary/45 bg-primary/15 text-primary"
-                : "border-border/70 bg-muted/60 text-muted-foreground",
-            )}
-          >
-            {paneIndex}
-          </span>
-          <span className="min-w-0 truncate font-medium">{title}</span>
+          <span className="min-w-0 flex-1 truncate font-medium">{title}</span>
           {projectTitle ? (
             <span className="hidden min-w-0 truncate text-muted-foreground @2xl/workspace-tabs:inline">
               · {projectTitle}
@@ -242,7 +221,7 @@ function PaneTab({
       <button
         type="button"
         aria-label={`Close pane ${paneIndex}`}
-        className="mr-0.5 inline-flex size-4 shrink-0 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary/70"
+        className="mr-0.5 ml-0.5 inline-flex size-4 shrink-0 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary/70"
         onClick={onClose}
       >
         <XIcon aria-hidden className="size-3" />
@@ -263,7 +242,7 @@ function PaneStrip({
   readonly onClose: (pane: ChatWorkspacePane) => void;
 }) {
   return (
-    <div className="@container/workspace-tabs flex min-h-0 min-w-0 shrink-0 items-center border-b border-border/60 bg-muted/20 px-0">
+    <div className="drag-region @container/workspace-tabs flex min-h-0 min-w-0 shrink-0 items-center border-b border-border/60 bg-muted/20 px-0">
       <div
         role="toolbar"
         aria-label="Open chat panes"
@@ -280,9 +259,35 @@ function PaneStrip({
           />
         ))}
       </div>
-      <span className="hidden shrink-0 px-1.5 text-[11px] text-muted-foreground @2xl/workspace-tabs:inline">
-        {panes.length} {panes.length === 1 ? "pane" : "panes"}
-      </span>
+    </div>
+  );
+}
+
+function ThreadSplitDropOverlay({
+  paneCount,
+  threadTitle,
+}: {
+  readonly paneCount: number;
+  readonly threadTitle: string;
+}) {
+  return (
+    <div
+      className="pointer-events-none absolute inset-3 z-30 grid min-w-0 gap-3 rounded-lg bg-background/75 p-3 backdrop-blur-[2px]"
+      style={{ gridTemplateColumns: `repeat(${paneCount + 1}, minmax(0, 1fr))` }}
+    >
+      {Array.from({ length: paneCount }, (_, index) => (
+        <div
+          key={`existing-pane-${index}`}
+          className="flex min-w-0 items-center justify-center rounded-md border border-dashed border-border/70 bg-muted/20 px-2 text-center text-xs text-muted-foreground"
+        >
+          {index === 0 ? "Current chat" : "Open chat"}
+        </div>
+      ))}
+      <div className="flex min-w-0 flex-col items-center justify-center gap-1 rounded-md border-2 border-dashed border-primary/70 bg-primary/10 px-3 text-center text-primary">
+        <Columns2Icon aria-hidden className="size-5" />
+        <span className="text-sm font-medium">Release to split</span>
+        <span className="max-w-full truncate text-xs text-primary/80">{threadTitle}</span>
+      </div>
     </div>
   );
 }
@@ -326,7 +331,15 @@ export function ChatWorkspace({ activeTarget, renderActivePane }: ChatWorkspaceP
   const focusPane = useChatWorkspaceStore((state) => state.focusPane);
   const closePane = useChatWorkspaceStore((state) => state.closePane);
   const setSplitRatio = useChatWorkspaceStore((state) => state.setSplitRatio);
+  const draggingThreadRef = useChatWorkspaceStore((state) => state.draggingThreadRef);
+  const draggingThread = useThread(draggingThreadRef);
   const activeTargetKey = chatWorkspaceTargetKey(activeTarget);
+  const draggingThreadTarget =
+    draggingThreadRef === null
+      ? null
+      : ({ kind: "server", threadRef: draggingThreadRef } as const);
+  const draggingThreadTargetKey =
+    draggingThreadTarget === null ? null : chatWorkspaceTargetKey(draggingThreadTarget);
   const gridRef = useRef<HTMLDivElement | null>(null);
   const resizeStartRef = useRef<{
     readonly startX: number;
@@ -334,7 +347,12 @@ export function ChatWorkspace({ activeTarget, renderActivePane }: ChatWorkspaceP
     readonly width: number;
   } | null>(null);
   const [isResizing, setIsResizing] = useState(false);
+  const [isThreadDropTarget, setIsThreadDropTarget] = useState(false);
   const isWideEnoughForSplit = useMediaQuery("md");
+
+  useEffect(() => {
+    if (draggingThreadRef === null) setIsThreadDropTarget(false);
+  }, [draggingThreadRef]);
 
   useEffect(() => {
     reconcileRouteTarget(activeTarget);
@@ -354,6 +372,10 @@ export function ChatWorkspace({ activeTarget, renderActivePane }: ChatWorkspaceP
     ? activeTargetKey
     : (storedActivePaneId ?? activeTargetKey);
   const isResizable = visiblePanes.length === 2 && isWideEnoughForSplit;
+  const draggingThreadAlreadyOpen =
+    draggingThreadTargetKey !== null &&
+    visiblePanes.some((pane) => pane.id === draggingThreadTargetKey);
+  const canDropDraggedThread = draggingThreadRef !== null && !draggingThreadAlreadyOpen;
 
   const handleResizePointerDown = useCallback(
     (event: ReactPointerEvent<HTMLDivElement>) => {
@@ -427,6 +449,45 @@ export function ChatWorkspace({ activeTarget, renderActivePane }: ChatWorkspaceP
     [activePaneId, closePane, navigate],
   );
 
+  const handleThreadDragEnter = useCallback((event: ReactDragEvent<HTMLDivElement>) => {
+    if (!canDropDraggedThread) return;
+    event.preventDefault();
+    setIsThreadDropTarget(true);
+  }, [canDropDraggedThread]);
+
+  const handleThreadDragOver = useCallback((event: ReactDragEvent<HTMLDivElement>) => {
+    if (!canDropDraggedThread) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "copy";
+    setIsThreadDropTarget(true);
+  }, [canDropDraggedThread]);
+
+  const handleThreadDragLeave = useCallback((event: ReactDragEvent<HTMLDivElement>) => {
+    const nextTarget = event.relatedTarget;
+    if (nextTarget instanceof Node && event.currentTarget.contains(nextTarget)) return;
+    setIsThreadDropTarget(false);
+  }, []);
+
+  const handleThreadDrop = useCallback(
+    (event: ReactDragEvent<HTMLDivElement>) => {
+      const threadRef = useChatWorkspaceStore.getState().draggingThreadRef;
+      if (threadRef === null) return;
+      event.preventDefault();
+      event.stopPropagation();
+      setIsThreadDropTarget(false);
+      useChatWorkspaceStore.getState().setDraggingThreadRef(null);
+      if (isChatWorkspaceTargetOpen(useChatWorkspaceStore.getState().panes, {
+        kind: "server",
+        threadRef,
+      })) {
+        return;
+      }
+      openChatThreadInSplit(threadRef);
+      navigateToTarget(navigate, { kind: "server", threadRef });
+    },
+    [navigate],
+  );
+
   return (
     <SidebarInset className="h-svh min-h-0 overflow-hidden overscroll-y-none bg-background text-foreground md:h-dvh">
       <DiffWorkerPoolProvider>
@@ -443,9 +504,13 @@ export function ChatWorkspace({ activeTarget, renderActivePane }: ChatWorkspaceP
             ref={gridRef}
             data-chat-workspace-split={isResizable ? "true" : "false"}
             className={cn(
-              "grid min-h-0 min-w-0 flex-1 overflow-auto bg-background",
+              "relative grid min-h-0 min-w-0 flex-1 overflow-auto bg-background",
               isResizing && "select-none",
             )}
+            onDragEnter={handleThreadDragEnter}
+            onDragLeave={handleThreadDragLeave}
+            onDragOver={handleThreadDragOver}
+            onDrop={handleThreadDrop}
             style={{
               gridTemplateColumns: isResizable
                 ? `minmax(280px, ${splitRatio}fr) minmax(280px, ${1 - splitRatio}fr)`
@@ -458,7 +523,6 @@ export function ChatWorkspace({ activeTarget, renderActivePane }: ChatWorkspaceP
               const paneCount = visiblePanes.length;
               const isActivePane = pane.id === activePaneId;
               const onActivate = () => activatePane(pane);
-              const onClose = () => handleClosePane(pane);
               const content =
                 pane.id === activeTargetKey ? (
                   renderActivePane({
@@ -466,15 +530,11 @@ export function ChatWorkspace({ activeTarget, renderActivePane }: ChatWorkspaceP
                     paneIndex,
                     paneCount,
                     isActivePane,
-                    onClosePane: onClose,
                   })
                 ) : (
                   <WorkspacePane
                     pane={pane}
-                    paneIndex={paneIndex}
-                    paneCount={paneCount}
                     isActivePane={isActivePane}
-                    onClosePane={onClose}
                   />
                 );
               return (
@@ -500,6 +560,12 @@ export function ChatWorkspace({ activeTarget, renderActivePane }: ChatWorkspaceP
                 </PaneFrame>
               );
             })}
+            {canDropDraggedThread && isThreadDropTarget ? (
+              <ThreadSplitDropOverlay
+                paneCount={visiblePanes.length}
+                threadTitle={draggingThread?.title ?? "Selected chat"}
+              />
+            ) : null}
           </div>
         </div>
       </DiffWorkerPoolProvider>

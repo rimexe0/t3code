@@ -89,14 +89,11 @@ function ChatThreadRouteView() {
   return (
     <ChatWorkspace
       activeTarget={{ kind: "server", threadRef }}
-      renderActivePane={({ paneId, paneIndex, paneCount, isActivePane, onClosePane }) =>
+      renderActivePane={({ paneId, isActivePane }) =>
         renderState === "ready" || (renderState === "loading" && serverThreadShell !== null) ? (
           <ChatView
             paneId={paneId}
-            paneIndex={paneIndex}
-            paneCount={paneCount}
             isActivePane={isActivePane}
-            onClosePane={onClosePane}
             environmentId={threadRef.environmentId}
             threadId={threadRef.threadId}
             routeKind="server"

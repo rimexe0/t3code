@@ -68,6 +68,7 @@ import {
   useReducer,
   useRef,
   useState,
+  type DragEvent as ReactDragEvent,
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
   type ReactNode,
@@ -146,7 +147,11 @@ import { cn } from "~/lib/utils";
 import { EnvironmentMachineIcon } from "./EnvironmentMachineIcon";
 import { ProjectEnvironmentBadge } from "./ProjectEnvironmentBadge";
 import { buildThreadActionMenuItems } from "./threadActionMenu.logic";
-import { openChatThreadInSplit } from "../chatWorkspaceStore";
+import {
+  isChatWorkspaceTargetOpen,
+  openChatThreadInSplit,
+  useChatWorkspaceStore,
+} from "../chatWorkspaceStore";
 import {
   animateSidebarLayoutChanges,
   applySidebarThreadDrop,
@@ -1038,6 +1043,11 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
   );
   const threadKey = scopedThreadKey(threadRef);
   const { leaseLiveStatus, rowRef } = useSidebarRowSubscriptionLease(props.isActive);
+  const isTargetOpenInStore = useChatWorkspaceStore((state) =>
+    isChatWorkspaceTargetOpen(state.panes, { kind: "server", threadRef }),
+  );
+  const isOpenInWorkspace = props.isActive || isTargetOpenInStore;
+  const canDragToSplit = !isOpenInWorkspace && !isRenaming && props.sortable === undefined;
   const isRegeneratingTitle = thread.titleRegeneration != null;
   const lastVisitedAt = useUiStateStore((state) => state.threadLastVisitedAtById[threadKey]);
   const isSelected = useThreadSelectionStore((state) => state.selectedThreadKeys.has(threadKey));
@@ -1218,6 +1228,29 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
     },
     [onThreadClick, threadRef],
   );
+  const handleDragStart = useCallback(
+    (event: ReactDragEvent<HTMLDivElement>) => {
+      if (!canDragToSplit) {
+        event.preventDefault();
+        return;
+      }
+      const target = event.target;
+      if (
+        target instanceof HTMLElement &&
+        target.closest("button, a, input") !== null
+      ) {
+        event.preventDefault();
+        return;
+      }
+      event.dataTransfer.effectAllowed = "copy";
+      event.dataTransfer.setData("text/plain", thread.title);
+      useChatWorkspaceStore.getState().setDraggingThreadRef(threadRef);
+    },
+    [canDragToSplit, thread.title, threadRef],
+  );
+  const handleDragEnd = useCallback(() => {
+    useChatWorkspaceStore.getState().setDraggingThreadRef(null);
+  }, []);
   const handleAcknowledgeWokeClick = useCallback(
     (event: ReactMouseEvent) => {
       event.preventDefault();
@@ -1580,7 +1613,10 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
                 data-testid="sidebar-row-slim"
                 aria-busy={isRegeneratingTitle || undefined}
                 className={cn(rowSurfaceClassName, "flex h-9 items-center gap-2.5 px-2.5")}
+                draggable={canDragToSplit}
                 onClick={handleClick}
+                onDragEnd={handleDragEnd}
+                onDragStart={handleDragStart}
                 onDoubleClick={handleDoubleClick}
                 onKeyDown={handleKeyDown}
                 onContextMenu={handleContextMenu}
@@ -1733,8 +1769,11 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
               data-testid="sidebar-row-card"
               aria-busy={isRegeneratingTitle || undefined}
               className={rowSurfaceClassName}
+              draggable={canDragToSplit}
               onClick={handleClick}
               onDoubleClick={handleDoubleClick}
+              onDragEnd={handleDragEnd}
+              onDragStart={handleDragStart}
               onKeyDown={handleKeyDown}
               onContextMenu={handleContextMenu}
             />

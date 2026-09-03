@@ -53,9 +53,6 @@ interface ChatHeaderProps {
   activeThreadId: ThreadId;
   draftId?: DraftId;
   activeThreadTitle: string;
-  paneIndex?: number;
-  paneCount?: number;
-  isActivePane?: boolean;
   /** Drafts have no server thread yet, so the title carries no action menu. */
   isServerThread: boolean;
   activeProject: EnvironmentProject | null;
@@ -126,9 +123,6 @@ export const ChatHeader = memo(function ChatHeader({
   activeThreadId,
   draftId,
   activeThreadTitle,
-  paneIndex,
-  paneCount = 1,
-  isActivePane = true,
   isServerThread,
   activeProject,
   openInCwd,
@@ -327,20 +321,6 @@ export const ChatHeader = memo(function ChatHeader({
         ariaLabel="Thread breadcrumb"
         className="flex-1 overflow-clip [overflow-clip-margin:2px]"
       >
-        {paneIndex !== undefined && paneCount > 1 ? (
-          <span
-            aria-label={`Pane ${paneIndex} of ${paneCount}`}
-            title={`Pane ${paneIndex} of ${paneCount}`}
-            className={cn(
-              "inline-flex size-5 shrink-0 items-center justify-center rounded-md border text-[10px] font-semibold tabular-nums",
-              isActivePane
-                ? "border-primary/45 bg-primary/12 text-primary"
-                : "border-border/70 bg-muted/60 text-muted-foreground",
-            )}
-          >
-            {paneIndex}
-          </span>
-        ) : null}
         {/* The project always leads the header: knowing which project a
             thread lives in is priority zero, and the thread title alone
             doesn't answer it. */}

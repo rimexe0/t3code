@@ -185,7 +185,6 @@ import {
   Minimize2Icon,
   PaperclipIcon,
   WifiOffIcon,
-  XIcon,
 } from "lucide-react";
 import { cn, randomHex } from "~/lib/utils";
 import { stackedThreadToast, toastManager } from "./ui/toast";

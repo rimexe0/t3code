@@ -2,11 +2,13 @@ import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import { beforeEach, describe, expect, it } from "vite-plus/test";
 
+import type { DraftId } from "./composerDraftStore";
 import {
   DEFAULT_CHAT_WORKSPACE_SPLIT_RATIO,
   MAX_CHAT_WORKSPACE_SPLIT_RATIO,
   MIN_CHAT_WORKSPACE_SPLIT_RATIO,
   chatWorkspaceTargetKey,
+  isChatWorkspaceTargetOpen,
   parsePersistedChatWorkspaceState,
   useChatWorkspaceStore,
 } from "./chatWorkspaceStore";
@@ -92,5 +94,31 @@ describe("chatWorkspaceStore", () => {
 
     store.setSplitRatio(0.6);
     expect(useChatWorkspaceStore.getState().splitRatio).toBe(0.6);
+  });
+
+  it("tracks a transient sidebar drag without changing the pane layout", () => {
+    const store = useChatWorkspaceStore.getState();
+
+    store.setDraggingThreadRef(THREAD_C);
+    expect(useChatWorkspaceStore.getState().draggingThreadRef).toBe(THREAD_C);
+    expect(useChatWorkspaceStore.getState().panes).toEqual([]);
+
+    store.setDraggingThreadRef(null);
+    expect(useChatWorkspaceStore.getState().draggingThreadRef).toBeNull();
+  });
+
+  it("recognizes an already-open target without opening drafts or other threads", () => {
+    const panes = [
+      {
+        id: chatWorkspaceTargetKey({ kind: "server", threadRef: THREAD_A }),
+        target: { kind: "server", threadRef: THREAD_A } as const,
+      },
+    ];
+
+    expect(isChatWorkspaceTargetOpen(panes, { kind: "server", threadRef: THREAD_A })).toBe(true);
+    expect(isChatWorkspaceTargetOpen(panes, { kind: "server", threadRef: THREAD_B })).toBe(false);
+    expect(isChatWorkspaceTargetOpen(panes, { kind: "draft", draftId: "draft-1" as DraftId })).toBe(
+      false,
+    );
   });
 });

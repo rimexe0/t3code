@@ -582,10 +582,7 @@ type ChatViewProps =
       forceExpandedMobileComposer?: boolean;
       threadSyncPhase?: ThreadSyncPhase | null;
       paneId?: string;
-      paneIndex?: number;
-      paneCount?: number;
       isActivePane?: boolean;
-      onClosePane?: () => void;
       routeKind: "server";
       draftId?: never;
     }
@@ -597,10 +594,7 @@ type ChatViewProps =
       forceExpandedMobileComposer?: boolean;
       threadSyncPhase?: never;
       paneId?: string;
-      paneIndex?: number;
-      paneCount?: number;
       isActivePane?: boolean;
-      onClosePane?: () => void;
       routeKind: "draft";
       draftId: DraftId;
     };
@@ -1291,10 +1285,7 @@ function ChatViewContent(props: ChatViewProps) {
     reserveTitleBarControlInset = true,
     forceExpandedMobileComposer = false,
     paneId,
-    paneIndex,
-    paneCount,
     isActivePane = true,
-    onClosePane,
   } = props;
   const draftId = routeKind === "draft" ? props.draftId : null;
   const threadSyncPhase = routeKind === "server" ? (props.threadSyncPhase ?? null) : null;
@@ -6949,18 +6940,6 @@ function ChatViewContent(props: ChatViewProps) {
           onToggle={toggleRightPanelMaximized}
         />
       ) : null}
-      {onClosePane ? (
-          <Button
-            aria-label="Close chat pane"
-            title="Close chat pane"
-            className="size-7"
-          size="icon-sm"
-          variant="ghost"
-          onClick={onClosePane}
-        >
-          <XIcon className="size-3.5" />
-        </Button>
-      ) : null}
       {panelToggleControls}
     </div>
   );
@@ -7103,9 +7082,6 @@ function ChatViewContent(props: ChatViewProps) {
         >
           {!rightPanelOpen ? panelLayoutControls : null}
           <ChatHeader
-            {...(paneIndex === undefined ? {} : { paneIndex })}
-            {...(paneCount === undefined ? {} : { paneCount })}
-            isActivePane={isActivePane}
             {...(!supportsPullRequests || activeProjectRepository === null
               ? {}
               : { onOpenPullRequest: openProjectPullRequest })}

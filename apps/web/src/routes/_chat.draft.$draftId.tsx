@@ -1,7 +1,5 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect } from "react";
-import ChatView from "../components/ChatView";
-import { ChatWorkspace } from "../components/ChatWorkspace";
 import { resolveDraftPromotionNavigationTarget } from "../components/ChatView.logic";
 import {
   DraftId,
@@ -75,22 +73,7 @@ function DraftChatThreadRouteView() {
     return null;
   }
 
-  return (
-    <ChatWorkspace
-      activeTarget={{ kind: "draft", draftId }}
-      renderActivePane={({ paneId, isActivePane }) => (
-        <ChatView
-          paneId={paneId}
-          isActivePane={isActivePane}
-          draftId={draftId}
-          environmentId={draftSession.environmentId}
-          threadId={draftSession.threadId}
-          routeKind="draft"
-          forceExpandedMobileComposer
-        />
-      )}
-    />
-  );
+  return null;
 }
 
 export const Route = createFileRoute("/_chat/draft/$draftId")({

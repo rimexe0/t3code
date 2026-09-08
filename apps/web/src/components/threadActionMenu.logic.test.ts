@@ -47,6 +47,11 @@ describe("buildThreadActionMenuItems", () => {
     expect(items[copyIndex + 2]?.id).toBe("archive");
   });
 
+  it("omits open-in-split when the current pane already owns the thread", () => {
+    expect(ids(baseState)).toContain("open-in-split");
+    expect(buildThreadActionMenuItems(baseState, { includeOpenInSplit: false })[0]?.id).toBe("pin");
+  });
+
   it("includes branch items only for threads with a branch", () => {
     const withBranch = allIds({ ...baseState, branch: "feat/menu" });
     expect(withBranch).toContain("new-thread-on-branch");

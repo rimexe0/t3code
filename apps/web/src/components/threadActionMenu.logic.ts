@@ -52,9 +52,12 @@ export interface ThreadActionMenuState {
  */
 export function buildThreadActionMenuItems(
   state: ThreadActionMenuState,
+  options: { readonly includeOpenInSplit?: boolean } = {},
 ): ReadonlyArray<ContextMenuItem<ThreadActionMenuId>> {
   return [
-    { id: "open-in-split", label: "Open in split" },
+    ...(options.includeOpenInSplit === false
+      ? []
+      : [{ id: "open-in-split" as const, label: "Open in split" }]),
     ...(state.branch
       ? [
           {

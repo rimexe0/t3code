@@ -146,6 +146,16 @@ export function parsePersistedChatWorkspaceState(value: unknown): {
   };
 }
 
+export function mergePersistedChatWorkspaceState(
+  persistedState: unknown,
+  currentState: Pick<ChatWorkspaceStoreState, "panes" | "activePaneId" | "splitRatio">,
+): Pick<ChatWorkspaceStoreState, "panes" | "activePaneId" | "splitRatio"> {
+  return {
+    ...currentState,
+    ...parsePersistedChatWorkspaceState(persistedState),
+  };
+}
+
 const initialWorkspaceState = {
   panes: [] as ReadonlyArray<ChatWorkspacePane>,
   activePaneId: null as string | null,
@@ -242,6 +252,10 @@ export const useChatWorkspaceStore = create<ChatWorkspaceStoreState>()(
         resolveStorage(typeof window !== "undefined" ? window.localStorage : undefined),
       ),
       migrate: (persistedState) => parsePersistedChatWorkspaceState(persistedState),
+      merge: (persistedState, currentState) => ({
+        ...currentState,
+        ...mergePersistedChatWorkspaceState(persistedState, currentState),
+      }),
       partialize: (state) => ({
         panes: state.panes,
         activePaneId: state.activePaneId,

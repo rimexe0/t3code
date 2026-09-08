@@ -330,8 +330,10 @@ import {
   useProject,
   useProjects,
   useThread,
+  useThreadDetail,
   useThreadRefs,
   useThreadShell,
+  useThreadStatus,
 } from "../state/entities";
 import { environmentShell } from "../state/shell";
 import { ChatComposer, type ChatComposerHandle } from "./chat/ChatComposer";
@@ -447,7 +449,7 @@ import {
   waitForStartedServerThread,
   shouldRefocusComposerOnWindowFocus,
 } from "./ChatView.logic";
-import type { ThreadSyncPhase } from "../threadSync";
+import { resolveThreadSyncPhase, type ThreadSyncPhase } from "../threadSync";
 import { useLocalStorage } from "~/hooks/useLocalStorage";
 import { useComposerHandleContext } from "../composerHandleContext";
 import {
@@ -1438,8 +1440,6 @@ export default function ChatView(props: ChatViewProps) {
     isActivePane = true,
   } = props;
   const draftId = routeKind === "draft" ? props.draftId : null;
-  const threadSyncPhase = routeKind === "server" ? (props.threadSyncPhase ?? null) : null;
-  const threadDetailLoading = threadSyncPhase === "loading";
   const handleNewThread = useNewThreadHandler();
   const { settleThread, pinThread, confirmAndUnpinThread } = useThreadActions();
   const routeThreadRef = useMemo(
@@ -1517,6 +1517,18 @@ export default function ChatView(props: ChatViewProps) {
         : null,
   );
   const routeServerThreadShell = useThreadShell(routeKind === "server" ? routeThreadRef : null);
+  const routeServerThreadDetail = useThreadDetail(routeKind === "server" ? routeThreadRef : null);
+  const routeServerThreadStatus = useThreadStatus(routeKind === "server" ? routeThreadRef : null);
+  const threadSyncPhase =
+    routeKind === "server"
+      ? (props.threadSyncPhase ??
+        resolveThreadSyncPhase({
+          detailExists: routeServerThreadDetail !== null,
+          shellExists: routeServerThreadShell !== null,
+          status: routeServerThreadStatus,
+        }))
+      : null;
+  const threadDetailLoading = threadSyncPhase === "loading";
   const serverThread = useThread(routeThreadRef, { waitForShell: draftThread !== null });
   const loadingServerThread = useMemo(
     () =>
@@ -2052,6 +2064,7 @@ export default function ChatView(props: ChatViewProps) {
   // lands later still gets its signal (markThreadVisited never moves the
   // timestamp backwards).
   useEffect(() => {
+    if (!isActivePane) return;
     const completedAt = serverThread?.latestTurn?.completedAt;
     if (!serverThread?.id || !completedAt) return;
     markThreadVisited(
@@ -2059,6 +2072,7 @@ export default function ChatView(props: ChatViewProps) {
       completedAt,
     );
   }, [
+    isActivePane,
     markThreadVisited,
     serverThread?.environmentId,
     serverThread?.id,

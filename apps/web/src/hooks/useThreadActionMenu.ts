@@ -11,13 +11,13 @@ import { useRouter } from "@tanstack/react-router";
 import { useCallback, useMemo } from "react";
 
 import { resolveSnoozePresets, snoozeWakeDescription } from "../components/Sidebar.snooze";
-import { openChatThreadInSplit } from "../chatWorkspaceStore";
 import {
   buildThreadActionMenuItems,
   type ThreadActionMenuId,
 } from "../components/threadActionMenu.logic";
 import { stackedThreadToast, toastManager } from "../components/ui/toast";
 import { threadEnvironment } from "../state/threads";
+import { openChatThreadInSplit } from "../chatWorkspaceStore";
 import { useAtomCommand } from "../state/use-atom-command";
 import {
   readEnvironmentSupportsPinning,
@@ -66,8 +66,9 @@ export function useThreadActionMenu(input: {
   /** Fallback for "Copy path" when the thread has no worktree. */
   readonly projectCwd: string | null;
   readonly onStartRename: () => void;
+  readonly includeOpenInSplit?: boolean;
 }) {
-  const { threadRef, projectCwd, onStartRename } = input;
+  const { threadRef, projectCwd, onStartRename, includeOpenInSplit = true } = input;
   const router = useRouter();
   const projects = useProjects();
   const primaryEnvironmentId = usePrimaryEnvironmentId();
@@ -138,17 +139,20 @@ export function useThreadActionMenu(input: {
         };
         const isRegeneratingTitle = thread.titleRegeneration != null;
         const snoozePresets = resolveSnoozePresets(now, timestampFormat);
-        const items = buildThreadActionMenuItems({
-          branch: thread.branch ?? null,
-          isPinned: thread.pinnedAt != null,
-          isSettled: supports.settlement && thread.settledOverride === "settled",
-          isSnoozed: supports.snooze && effectiveSnoozed(thread, { now: now.toISOString() }),
-          canSnoozeNow: canSnooze(thread, { now: now.toISOString() }),
-          isRegeneratingTitle,
-          isRunning: thread.session?.status === "running" && thread.session.activeTurnId != null,
-          supports,
-          snoozePresets,
-        });
+        const items = buildThreadActionMenuItems(
+          {
+            branch: thread.branch ?? null,
+            isPinned: thread.pinnedAt != null,
+            isSettled: supports.settlement && thread.settledOverride === "settled",
+            isSnoozed: supports.snooze && effectiveSnoozed(thread, { now: now.toISOString() }),
+            canSnoozeNow: canSnooze(thread, { now: now.toISOString() }),
+            isRegeneratingTitle,
+            isRunning: thread.session?.status === "running" && thread.session.activeTurnId != null,
+            supports,
+            snoozePresets,
+          },
+          { includeOpenInSplit },
+        );
         const clicked = await settlePromise(() => api.contextMenu.show(items, position));
         if (clicked._tag === "Failure" || clicked.value === null) return;
         const action: ThreadActionMenuId = clicked.value;
@@ -191,6 +195,9 @@ export function useThreadActionMenu(input: {
           }
         };
         switch (action) {
+          case "open-in-split":
+            openChatThreadInSplit(threadRef);
+            return;
           case "project-settings": {
             const project = projects.find(
               (candidate) =>
@@ -207,9 +214,6 @@ export function useThreadActionMenu(input: {
             });
             return;
           }
-          case "open-in-split":
-            openChatThreadInSplit(threadRef);
-            return;
           case "new-thread-on-branch": {
             // Explicit branch carry-over: reuse the thread's worktree when it
             // has one, otherwise its branch on the local checkout.
@@ -342,6 +346,7 @@ export function useThreadActionMenu(input: {
       copyThreadIdToClipboard,
       deleteThread,
       handleNewThread,
+      includeOpenInSplit,
       logicalProjectKeyByPhysicalKey,
       markThreadUnread,
       onStartRename,

@@ -1280,6 +1280,7 @@ export interface ChatComposerProps {
   supportsQuestionAttachments: boolean;
   maxFileAttachmentBytes: number | null;
   routeKind: "server" | "draft";
+  isActivePane?: boolean;
   routeThreadRef: ScopedThreadRef;
   draftId: DraftId | null;
 
@@ -1384,7 +1385,7 @@ export interface ChatComposerProps {
   composerImagesRef: React.RefObject<ComposerImageAttachment[]>;
   composerFilesRef: React.RefObject<ComposerFileAttachment[]>;
   composerTerminalContextsRef: React.RefObject<TerminalContextDraft[]>;
-  composerRef: React.RefObject<ChatComposerHandle | null>;
+  composerRef: React.Ref<ChatComposerHandle>;
   onPageScrollKeyDown: (key: "PageUp" | "PageDown") => void;
   onPageScrollKeyUp: (key: string) => void;
   onPageScrollRelease: () => void;
@@ -1437,6 +1438,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     supportsQuestionAttachments,
     maxFileAttachmentBytes,
     routeKind,
+    isActivePane = true,
     routeThreadRef,
     draftId,
     activeThreadId,
@@ -5053,6 +5055,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
 
   useEffect(() => {
     const handler = (event: globalThis.KeyboardEvent) => {
+      if (!isActivePane) return;
       const command = resolveShortcutCommand(event, keybindings, {
         context: {
           terminalFocus: getTerminalFocusOwner() !== null,
@@ -5080,6 +5083,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     window.addEventListener("keydown", handler, true);
     return () => window.removeEventListener("keydown", handler, true);
   }, [
+    isActivePane,
     activePendingProgress,
     isComposerApprovalState,
     isComposerModelPickerOpen,

@@ -5,6 +5,7 @@ import { replaceComposerContextReferences } from "@t3tools/shared/composerContex
 import * as Schema from "effect/Schema";
 import {
   DndContext,
+  defaultAnnouncements,
   useSensor,
   useSensors,
   type DragEndEvent,
@@ -146,6 +147,11 @@ import { cn } from "~/lib/utils";
 import { EnvironmentMachineIcon } from "./EnvironmentMachineIcon";
 import { ProjectEnvironmentBadge } from "./ProjectEnvironmentBadge";
 import { buildThreadActionMenuItems } from "./threadActionMenu.logic";
+import {
+  isChatWorkspaceTargetOpen,
+  openChatThreadInSplit,
+  useChatWorkspaceStore,
+} from "../chatWorkspaceStore";
 import {
   animateSidebarLayoutChanges,
   applySidebarThreadDrop,
@@ -804,35 +810,13 @@ const SidebarDraftBlock = memo(function SidebarDraftBlock(props: {
   projectDisplayNameByKey: ReadonlyMap<string, string>;
   scopedProjectKeys: ReadonlySet<string> | null;
   routeDraftId: string | null;
+  splitViewDraftIds: ReadonlySet<string>;
+  mode?: "normal" | "split";
   onNavigateToDraft: (draftId: DraftId) => void;
 }) {
   const draftThreadsByThreadKey = useComposerDraftStore((store) => store.draftThreadsByThreadKey);
   const draftsByThreadKey = useComposerDraftStore((store) => store.draftsByThreadKey);
   const clearDraftThread = useComposerDraftStore((store) => store.clearDraftThread);
-  // The open draft's row is FROZEN at the moment the draft became the route:
-  // it stays visible (like a thread row) but never repaints while the user
-  // types. A draft that was never navigated away from has no snapshot to
-  // freeze, so a fresh typing session shows no row at all. Captured
-  // synchronously on route change (setState-during-render derived state) so
-  // the row never flickers out for a frame between route change and capture.
-  const [frozenActive, setFrozenActive] = useState<{
-    routeDraftId: string | null;
-    row: SidebarDraftRowData | null;
-  }>({ routeDraftId: null, row: null });
-  if (frozenActive.routeDraftId !== props.routeDraftId) {
-    let row: SidebarDraftRowData | null = null;
-    if (props.routeDraftId !== null) {
-      const draftId = DraftId.make(props.routeDraftId);
-      const store = useComposerDraftStore.getState();
-      const session = store.getDraftSession(draftId);
-      const composer = store.getComposerDraft(draftId);
-      row =
-        session && session.promotedTo == null && composer && composerDraftHasUserContent(composer)
-          ? { draftId, session, composer }
-          : null;
-    }
-    setFrozenActive({ routeDraftId: props.routeDraftId, row });
-  }
   const drafts = useMemo(() => {
     const rows: SidebarDraftRowData[] = [];
     // Every non-promoted session with content gets a row, mapped or not:
@@ -848,12 +832,16 @@ const SidebarDraftBlock = memo(function SidebarDraftBlock(props: {
       ) {
         continue;
       }
+      const belongsInSplitGroup = props.splitViewDraftIds.has(draftKey);
+      const belongsInThisBlock =
+        props.mode === "split" ? belongsInSplitGroup : !belongsInSplitGroup;
+      if (!belongsInThisBlock) continue;
       if (draftKey === props.routeDraftId) {
-        // Open draft: render the frozen entry snapshot, or nothing for a
-        // draft that has never been left. Gated on the LIVE session above so
-        // send/discard still removes the row immediately.
-        if (frozenActive.routeDraftId === draftKey && frozenActive.row !== null) {
-          rows.push(frozenActive.row);
+        // Keep the active row live so a fresh draft appears as soon as it has
+        // content and disappears again when the content is cleared.
+        const composer = draftsByThreadKey[draftKey];
+        if (composer && composerDraftHasUserContent(composer)) {
+          rows.push({ draftId: DraftId.make(draftKey), session, composer });
         }
         continue;
       }
@@ -868,9 +856,10 @@ const SidebarDraftBlock = memo(function SidebarDraftBlock(props: {
   }, [
     draftThreadsByThreadKey,
     draftsByThreadKey,
-    frozenActive,
+    props.mode,
     props.routeDraftId,
     props.scopedProjectKeys,
+    props.splitViewDraftIds,
   ]);
   const handleDiscard = useCallback(
     (draftId: DraftId) => {
@@ -1037,6 +1026,11 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
   );
   const threadKey = scopedThreadKey(threadRef);
   const { leaseLiveStatus, rowRef } = useSidebarRowSubscriptionLease(props.isActive);
+  const isTargetOpenInStore = useChatWorkspaceStore(
+    (state) =>
+      state.panes.length > 1 &&
+      isChatWorkspaceTargetOpen(state.panes, { kind: "server", threadRef }),
+  );
   const isRegeneratingTitle = thread.titleRegeneration != null;
   const lastVisitedAt = useUiStateStore((state) => state.threadLastVisitedAtById[threadKey]);
   const isSelected = useThreadSelectionStore((state) => state.selectedThreadKeys.has(threadKey));
@@ -1091,6 +1085,8 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
   // switching sidebars must not light up every historical thread as unread.
   const isUnread = hasUnseenCompletion({ ...thread, lastVisitedAt });
   const status = resolveSidebarThreadStatus(thread);
+  const isInFlight =
+    status === "working" || status === "monitoring" || status === "approval" || status === "input";
   // A woken thread reappears at its original position (the sort is
   // deliberately static), so the pill has to carry the weight. Snoozing is
   // an explicit act, so the pill clears only when the user re-engages:
@@ -1387,13 +1383,19 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
     variantAction === "unsettle" && "[&:not(:hover):not(:focus-within)_*]:text-secondary-label/70",
     props.isActive
       ? "bg-sidebar-row-active text-sidebar-foreground"
-      : isSelected
-        ? "bg-sidebar-row-selected text-sidebar-foreground"
-        : hasUnsentDraft
-          ? cn(draftSurfaceClassName, "text-sidebar-foreground")
-          : shouldRecede
-            ? "text-sidebar-muted-foreground/75 hover:bg-sidebar-row-hover hover:text-sidebar-foreground"
-            : "bg-transparent text-sidebar-foreground hover:bg-sidebar-row-hover",
+      : isTargetOpenInStore
+        ? "text-sidebar-foreground"
+        : isSelected
+          ? "bg-sidebar-row-selected text-sidebar-foreground"
+          : hasUnsentDraft
+            ? cn(draftSurfaceClassName, "text-sidebar-foreground")
+            : shouldRecede
+              ? "text-sidebar-muted-foreground/75 hover:bg-sidebar-row-hover hover:text-sidebar-foreground"
+              : "bg-transparent text-sidebar-foreground hover:bg-sidebar-row-hover",
+    isInFlight &&
+      !props.isActive &&
+      !isSelected &&
+      "opacity-70 transition-opacity hover:opacity-100",
     isFileDragOver && "ring-1 ring-inset ring-primary/70",
     // The hover tint must not clobber an active/selected row's own surface.
     isFileDragOver && !props.isActive && !isSelected && "bg-sidebar-row-hover",
@@ -2114,6 +2116,31 @@ export default function Sidebar() {
   const projects = useProjects();
   const projectOrder = useUiStateStore((store) => store.projectOrder);
   const threads = useThreadShells();
+  const chatWorkspacePanes = useChatWorkspaceStore((state) => state.panes);
+  const splitViewThreadKeys = useMemo(() => {
+    if (chatWorkspacePanes.length < 2) return new Set<string>();
+    return new Set(
+      chatWorkspacePanes.flatMap((pane) =>
+        pane.target.kind === "server" ? [scopedThreadKey(pane.target.threadRef)] : [],
+      ),
+    );
+  }, [chatWorkspacePanes]);
+  const splitViewDraftIds = useMemo<ReadonlySet<string>>(
+    () =>
+      chatWorkspacePanes.length > 1
+        ? new Set<string>(
+            chatWorkspacePanes.flatMap((pane) =>
+              pane.target.kind === "draft" ? [pane.target.draftId] : [],
+            ),
+          )
+        : new Set<string>(),
+    [chatWorkspacePanes],
+  );
+  const isSplitViewThread = useCallback(
+    (thread: EnvironmentThreadShell) =>
+      splitViewThreadKeys.has(scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id))),
+    [splitViewThreadKeys],
+  );
   const router = useRouter();
   const { isMobile, setOpenMobile } = useSidebar();
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
@@ -2414,9 +2441,8 @@ export default function Sidebar() {
   // Count-only subscription: the parent needs "are there draft rows" for the
   // empty state, while SidebarDraftBlock owns the per-keystroke content
   // subscription. Selecting a number keeps typing in a draft composer from
-  // re-rendering the whole sidebar. Approximates the block's row filter
-  // (every non-promoted session with content); it can overcount by one for
-  // an open never-left draft, which only softens the empty state.
+  // re-rendering the whole sidebar. It mirrors the block's row filter
+  // (every non-promoted session with content).
   const routeDraftIdForRows = routeTarget?.kind === "draft" ? routeTarget.draftId : null;
   const visibleDraftSessionCount = useComposerDraftStore((store) => {
     let count = 0;
@@ -2434,6 +2460,22 @@ export default function Sidebar() {
         continue;
       }
       count += 1;
+    }
+    return count;
+  });
+  const splitViewDraftCount = useComposerDraftStore((store) => {
+    let count = 0;
+    for (const draftId of splitViewDraftIds) {
+      const session = store.draftThreadsByThreadKey[draftId];
+      if (
+        session !== undefined &&
+        session.promotedTo == null &&
+        composerDraftHasUserContent(store.draftsByThreadKey[draftId]) &&
+        (scopedProjectKeys === null ||
+          scopedProjectKeys.has(`${session.environmentId}:${session.projectId}`))
+      ) {
+        count += 1;
+      }
     }
     return count;
   });
@@ -2603,10 +2645,20 @@ export default function Sidebar() {
   const [threadSearchQuery, setThreadSearchQuery] = useState("");
   const [activeSearchResultIndex, setActiveSearchResultIndex] = useState(0);
   const isSearchingThreads = threadSearchQuery.trim().length > 0;
-  const searchableThreads = useMemo(
-    () => [...pinnedThreads, ...activeThreads, ...snoozedThreads, ...settledThreads],
-    [activeThreads, pinnedThreads, settledThreads, snoozedThreads],
-  );
+  const searchableThreads = useMemo(() => {
+    const isSplit = (thread: EnvironmentThreadShell) =>
+      splitViewThreadKeys.has(scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)));
+    return [
+      ...pinnedThreads.filter(isSplit),
+      ...activeThreads.filter(isSplit),
+      ...snoozedThreads.filter(isSplit),
+      ...settledThreads.filter(isSplit),
+      ...pinnedThreads.filter((thread) => !isSplit(thread)),
+      ...activeThreads.filter((thread) => !isSplit(thread)),
+      ...snoozedThreads.filter((thread) => !isSplit(thread)),
+      ...settledThreads.filter((thread) => !isSplit(thread)),
+    ];
+  }, [activeThreads, pinnedThreads, settledThreads, snoozedThreads, splitViewThreadKeys]);
   const threadSearchResults = useMemo(
     () => searchSidebarThreads(searchableThreads, threadSearchQuery),
     [searchableThreads, threadSearchQuery],
@@ -2722,10 +2774,28 @@ export default function Sidebar() {
     return routeThread === undefined ? EMPTY_THREADS : [routeThread];
   }, [routeThreadKey, snoozedShelfExpanded, snoozedThreads]);
 
-  const orderedThreads = useMemo(
-    () => [...pinnedThreads, ...activeThreads, ...visibleSnoozedThreads, ...renderedSettledThreads],
-    [pinnedThreads, activeThreads, visibleSnoozedThreads, renderedSettledThreads],
-  );
+  const orderedThreads = useMemo(() => {
+    const isSplit = (thread: EnvironmentThreadShell) =>
+      splitViewThreadKeys.has(scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)));
+    return [
+      ...pinnedThreads.filter(isSplit),
+      ...activeThreads.filter(isSplit),
+      ...snoozedThreads.filter(isSplit),
+      ...settledThreads.filter(isSplit),
+      ...pinnedThreads.filter((thread) => !isSplit(thread)),
+      ...activeThreads.filter((thread) => !isSplit(thread)),
+      ...visibleSnoozedThreads.filter((thread) => !isSplit(thread)),
+      ...renderedSettledThreads.filter((thread) => !isSplit(thread)),
+    ];
+  }, [
+    activeThreads,
+    pinnedThreads,
+    renderedSettledThreads,
+    settledThreads,
+    snoozedThreads,
+    splitViewThreadKeys,
+    visibleSnoozedThreads,
+  ]);
   const orderedThreadKeys = useMemo(
     () =>
       orderedThreads.map((thread) =>
@@ -3112,6 +3182,7 @@ export default function Sidebar() {
   const dragSensorRef = useRef<SidebarPointerSensor | null>(null);
   const finishThreadDrag = useCallback((started: boolean) => {
     dragSensorRef.current = null;
+    useChatWorkspaceStore.getState().setDraggingThreadRef(null);
     if (started) {
       listMotionRef.current?.release();
       setDragState(null);
@@ -3123,11 +3194,23 @@ export default function Sidebar() {
   const cancelThreadDrag = useCallback(() => {
     dragSensorRef.current?.cancel();
   }, []);
+  const dropThreadInWorkspace = useCallback(
+    (event: PointerEvent) => {
+      const target = document.elementFromPoint(event.clientX, event.clientY);
+      const { draggingThreadRef } = useChatWorkspaceStore.getState();
+      if (!draggingThreadRef || !target?.closest("[data-chat-workspace-drop-target]")) return false;
+      openChatThreadInSplit(draggingThreadRef);
+      navigateToThread(draggingThreadRef);
+      return true;
+    },
+    [navigateToThread],
+  );
   const dndSensors = useSensors(
     useSensor(SidebarPointerSensor, {
       distance: 6,
       onAttach: attachDragSensor,
       onFinish: finishThreadDrag,
+      onDropOutside: dropThreadInWorkspace,
     }),
   );
   const sectionByThreadKey = useMemo(() => {
@@ -3272,6 +3355,12 @@ export default function Sidebar() {
       const activeKey = String(event.active.id);
       const activeSection = sectionByThreadKey.get(activeKey);
       if (activeSection === undefined) return;
+      const activeThread = threadByKey.get(activeKey);
+      if (activeThread !== undefined) {
+        useChatWorkspaceStore
+          .getState()
+          .setDraggingThreadRef(scopeThreadRef(activeThread.environmentId, activeThread.id));
+      }
       // Stop normal section motion before dnd-kit measures the picked-up row.
       listMotionRef.current?.suspend();
       const list = threadListRef.current;
@@ -3293,7 +3382,7 @@ export default function Sidebar() {
           event.activatorEvent instanceof PointerEvent ? event.activatorEvent.clientY : null,
       });
     },
-    [sectionByThreadKey],
+    [sectionByThreadKey, threadByKey],
   );
   // Include every visible row in the measured order. Older servers disable
   // pickup on their rows without changing where those rows render.
@@ -3302,16 +3391,16 @@ export default function Sidebar() {
       list: readonly EnvironmentThreadShell[],
       section: SidebarSection,
     ): SidebarListItem[] =>
-      list.map((thread) => {
-        const key = scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id));
-        return { kind: "thread", key, section };
-      });
+      list
+        .filter((thread) => !isSplitViewThread(thread))
+        .map((thread) => {
+          const key = scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id));
+          return { kind: "thread", key, section };
+        });
     if (
-      pinnedThreads.length +
-        activeThreads.length +
-        snoozedThreads.length +
-        settledThreads.length ===
-      0
+      [pinnedThreads, activeThreads, snoozedThreads, settledThreads].every((list) =>
+        list.every(isSplitViewThread),
+      )
     ) {
       return [];
     }
@@ -3322,7 +3411,7 @@ export default function Sidebar() {
     const activeRows = rowsOf(activeThreads, "active");
     items.push({ kind: "marker", marker: "active-placeholder" });
     items.push(...activeRows);
-    if (snoozedThreads.length > 0) {
+    if (snoozedThreads.some((thread) => !isSplitViewThread(thread))) {
       items.push({ kind: "marker", marker: "snoozed-header" });
       items.push(...rowsOf(visibleSnoozedThreads, "snoozed"));
     }
@@ -3333,10 +3422,11 @@ export default function Sidebar() {
     return items;
   }, [
     activeThreads,
+    isSplitViewThread,
     pinnedThreads,
     renderedSettledThreads,
-    settledThreads.length,
-    snoozedThreads.length,
+    settledThreads,
+    snoozedThreads,
     visibleSnoozedThreads,
   ]);
   useEffect(() => {
@@ -4036,6 +4126,10 @@ export default function Sidebar() {
             if (projectGroup) openProjectSettings(projectGroup);
             return;
           }
+          case "open-in-split":
+            openChatThreadInSplit(threadRef);
+            navigateToThread(threadRef);
+            return;
           case "new-thread-on-branch": {
             // Explicit branch carry-over: reuse the thread's worktree when it
             // has one, otherwise its branch on the local checkout.
@@ -4197,6 +4291,7 @@ export default function Sidebar() {
       markThreadUnread,
       openProjectSettings,
       projectByKey,
+      navigateToThread,
       serverConfigs,
       startThreadRename,
       updateThreadMetadata,
@@ -4551,6 +4646,21 @@ export default function Sidebar() {
               timeout={400}
             >
               <DndContext
+                accessibility={{
+                  announcements: {
+                    ...defaultAnnouncements,
+                    onDragCancel: (event) => {
+                      const threadRef = parseScopedThreadKey(String(event.active.id));
+                      return threadRef &&
+                        isChatWorkspaceTargetOpen(useChatWorkspaceStore.getState().panes, {
+                          kind: "server",
+                          threadRef,
+                        })
+                        ? "Opened thread in split view."
+                        : defaultAnnouncements.onDragCancel(event);
+                    },
+                  },
+                }}
                 sensors={dndSensors}
                 collisionDetection={dndCollisionDetection}
                 modifiers={[
@@ -4698,9 +4808,48 @@ export default function Sidebar() {
                         );
                       };
                       const from = dragState?.activeSection ?? null;
+                      const splitViewRows = [
+                        ...pinnedThreads
+                          .filter(isSplitViewThread)
+                          .map((thread) => ({ thread, section: "pinned" as const })),
+                        ...activeThreads
+                          .filter(isSplitViewThread)
+                          .map((thread) => ({ thread, section: "active" as const })),
+                        ...snoozedThreads
+                          .filter(isSplitViewThread)
+                          .map((thread) => ({ thread, section: "snoozed" as const })),
+                        ...settledThreads
+                          .filter(isSplitViewThread)
+                          .map((thread) => ({ thread, section: "settled" as const })),
+                      ];
                       const items: ReactNode[] = [
+                        splitViewRows.length > 0 || splitViewDraftCount > 0 ? (
+                          <li key="split-view-group" className="list-none">
+                            <div
+                              role="group"
+                              aria-label="Split view threads"
+                              className="rounded-md bg-primary/5 p-1 ring-1 ring-inset ring-primary/25"
+                            >
+                              <ul className="flex flex-col gap-px">
+                                <SidebarDraftBlock
+                                  mode="split"
+                                  splitViewDraftIds={splitViewDraftIds}
+                                  projectByKey={projectByKey}
+                                  projectDisplayNameByKey={projectDisplayNameByKey}
+                                  scopedProjectKeys={scopedProjectKeys}
+                                  routeDraftId={routeDraftIdForRows}
+                                  onNavigateToDraft={navigateToDraft}
+                                />
+                                {splitViewRows.map(({ thread, section }) =>
+                                  renderThreadRowInner(thread, section),
+                                )}
+                              </ul>
+                            </div>
+                          </li>
+                        ) : null,
                         <SidebarDraftBlock
                           key="draft-sessions"
+                          splitViewDraftIds={splitViewDraftIds}
                           projectByKey={projectByKey}
                           projectDisplayNameByKey={projectDisplayNameByKey}
                           scopedProjectKeys={scopedProjectKeys}

@@ -23,7 +23,7 @@ function pointer(type: string, values: Partial<PointerEvent> = {}) {
   });
 }
 
-function gesture() {
+function gesture(onDropOutside = vi.fn(() => false)) {
   const callbacks = {
     onStart: vi.fn(),
     onMove: vi.fn(),
@@ -37,7 +37,7 @@ function gesture() {
   const props = {
     active: "thread",
     event: pointer("pointerdown"),
-    options: { distance: 6, onAttach: vi.fn(), onFinish },
+    options: { distance: 6, onAttach: vi.fn(), onFinish, onDropOutside },
     ...callbacks,
   } as unknown as SensorProps<ConstructorParameters<typeof SidebarPointerSensor>[0]["options"]>;
   const sensor = new SidebarPointerSensor(props);
@@ -61,6 +61,33 @@ afterEach(() => {
 });
 
 describe("sidebar pointer lifecycle", () => {
+  it("consumes a workspace drop before cleanup without applying a sidebar reorder", () => {
+    const order: string[] = [];
+    const onDrop = vi.fn(() => {
+      order.push("split");
+      return true;
+    });
+    const drag = gesture(onDrop);
+    drag.onFinish.mockImplementation(() => order.push("cleanup"));
+    document.dispatchEvent(pointer("pointermove", { clientY: 20 }));
+    document.dispatchEvent(pointer("pointerup", { clientX: 500, buttons: 0 }));
+    expect(onDrop).toHaveBeenCalledOnce();
+    expect(order).toEqual(["split", "cleanup"]);
+    expect(drag.onEnd).not.toHaveBeenCalled();
+    expect(drag.onCancel).toHaveBeenCalledOnce();
+  });
+
+  it("does not split on a click, cancellation, or another pointer's release", () => {
+    const onDrop = vi.fn(() => true);
+    gesture(onDrop);
+    document.dispatchEvent(pointer("pointerup", { buttons: 0 }));
+    const drag = gesture(onDrop);
+    document.dispatchEvent(pointer("pointermove", { clientY: 20 }));
+    document.dispatchEvent(pointer("pointerup", { pointerId: 2, buttons: 0 }));
+    drag.sensor.cancel();
+    expect(onDrop).not.toHaveBeenCalled();
+  });
+
   it("keeps a click idle and starts only after the drag threshold", () => {
     const click = gesture();
     document.dispatchEvent(pointer("pointermove", { clientY: 16 }));

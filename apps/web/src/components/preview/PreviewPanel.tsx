@@ -11,6 +11,8 @@ import { PreviewView } from "./PreviewView";
 interface Props {
   mode: PreviewPanelMode;
   threadRef: ScopedThreadRef;
+  /** Split view: keyboard preview actions are handled by the active pane only. */
+  isActivePane?: boolean;
   tabId?: string | null;
   configuredUrls?: ReadonlyArray<string> | undefined;
   visible: boolean;
@@ -23,6 +25,7 @@ interface Props {
 export function PreviewPanel({
   mode,
   threadRef,
+  isActivePane = true,
   tabId,
   configuredUrls,
   visible,
@@ -44,6 +47,7 @@ export function PreviewPanel({
     <PreviewPanelShell mode={mode}>
       <PreviewView
         threadRef={threadRef}
+        isActivePane={isActivePane}
         {...(tabId !== undefined ? { tabId } : {})}
         configuredUrls={configuredUrls}
         visible={visible}

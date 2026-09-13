@@ -20,6 +20,19 @@ on Windows and Linux to start a new thread and immediately open another draft. T
 next draft keeps the workspace mode and base branch you selected. With **New
 worktree**, each background submission creates its own worktree.
 
+## Work in split view
+
+On web and desktop, choose **Open in split** from a thread's menu, or drag a
+sidebar thread into the chat area. Each pane keeps its own conversation and
+composer. Click a pane or its tab to focus it; keyboard shortcuts follow the
+focused pane. With two panes side by side, drag the divider to resize them, or
+focus the divider and use the left and right arrow keys.
+
+Open conversations share one highlighted group in the sidebar. An empty draft
+stays in the tab strip until it has content to show in the sidebar. Closing a
+pane removes it from the layout without deleting the conversation. You can open
+it again from the sidebar. The layout is saved on the current client.
+
 ## Pin and reorder threads
 
 Pin a thread from its menu to keep it above your active work.

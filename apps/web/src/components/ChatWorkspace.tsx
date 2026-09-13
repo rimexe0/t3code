@@ -1,7 +1,6 @@
 import { scopeProjectRef } from "@t3tools/client-runtime/environment";
 import { useNavigate } from "@tanstack/react-router";
 import {
-  type DragEvent as ReactDragEvent,
   useCallback,
   useEffect,
   useRef,
@@ -14,8 +13,6 @@ import { Columns2Icon, XIcon } from "lucide-react";
 
 import {
   chatWorkspaceTargetKey,
-  isChatWorkspaceTargetOpen,
-  openChatThreadInSplit,
   useChatWorkspaceStore,
   type ChatWorkspacePane,
   type ChatWorkspaceTarget,
@@ -72,7 +69,6 @@ function WorkspacePane({
   if (pane.target.kind === "server") {
     return (
       <ChatView
-        paneId={pane.id}
         isActivePane={isActivePane}
         reserveTitleBarControlInset={paneCount === 1}
         environmentId={pane.target.threadRef.environmentId}
@@ -88,7 +84,6 @@ function WorkspacePane({
 
   return (
     <ChatView
-      paneId={pane.id}
       isActivePane={isActivePane}
       reserveTitleBarControlInset={paneCount === 1}
       draftId={draftId}
@@ -201,7 +196,7 @@ function PaneTab({
             <button
               type="button"
               aria-pressed={isActivePane}
-              className="flex min-w-0 flex-1 items-center gap-1 overflow-hidden rounded-s-md px-1.5 py-1 text-left focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary/70"
+              className="flex min-w-0 flex-1 cursor-pointer items-center gap-1 overflow-hidden rounded-s-md px-1.5 py-1 text-left focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
               onClick={onActivate}
             />
           }
@@ -321,26 +316,8 @@ function PaneFrame({
           ? "border-primary/55 ring-1 ring-inset ring-primary/45"
           : "ring-1 ring-inset ring-transparent hover:border-border hover:ring-border/60",
       )}
-      onFocusCapture={(event) => {
-        const target = event.target;
-        if (
-          target instanceof Element &&
-          target.closest('button[aria-label^="Close pane"]') !== null
-        ) {
-          return;
-        }
-        onActivate();
-      }}
-      onPointerDown={(event) => {
-        const target = event.target;
-        if (
-          target instanceof Element &&
-          target.closest('button[aria-label^="Close pane"]') !== null
-        ) {
-          return;
-        }
-        onActivate();
-      }}
+      onFocusCapture={onActivate}
+      onPointerDown={onActivate}
     >
       {children}
     </section>
@@ -359,10 +336,10 @@ export function ChatWorkspace({ activeTarget }: ChatWorkspaceProps) {
   const draggingThreadRef = useChatWorkspaceStore((state) => state.draggingThreadRef);
   const draggingThread = useThread(draggingThreadRef);
   const activeTargetKey = chatWorkspaceTargetKey(activeTarget);
-  const draggingThreadTarget =
-    draggingThreadRef === null ? null : ({ kind: "server", threadRef: draggingThreadRef } as const);
   const draggingThreadTargetKey =
-    draggingThreadTarget === null ? null : chatWorkspaceTargetKey(draggingThreadTarget);
+    draggingThreadRef === null
+      ? null
+      : chatWorkspaceTargetKey({ kind: "server", threadRef: draggingThreadRef });
   const gridRef = useRef<HTMLDivElement | null>(null);
   const resizeStartRef = useRef<{
     readonly startX: number;
@@ -374,12 +351,8 @@ export function ChatWorkspace({ activeTarget }: ChatWorkspaceProps) {
   const isWideEnoughForSplit = useMediaQuery("md");
 
   useEffect(() => {
-    if (draggingThreadRef === null) setIsThreadDropTarget(false);
-  }, [draggingThreadRef]);
-
-  useEffect(() => {
     reconcileRouteTarget(activeTarget);
-  }, [activeTargetKey, activeTarget, reconcileRouteTarget]);
+  }, [activeTarget, reconcileRouteTarget]);
 
   const visiblePanes: ReadonlyArray<ChatWorkspacePane> =
     panes.length === 0
@@ -415,7 +388,7 @@ export function ChatWorkspace({ activeTarget }: ChatWorkspaceProps) {
       };
       setIsResizing(true);
     },
-    [isResizable, splitRatio],
+    [isResizable, splitRatio, setIsResizing],
   );
 
   const handleResizePointerMove = useCallback(
@@ -429,14 +402,17 @@ export function ChatWorkspace({ activeTarget }: ChatWorkspaceProps) {
     [setSplitRatio],
   );
 
-  const finishResize = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
-    if (!resizeStartRef.current) return;
-    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-      event.currentTarget.releasePointerCapture(event.pointerId);
-    }
-    resizeStartRef.current = null;
-    setIsResizing(false);
-  }, []);
+  const finishResize = useCallback(
+    (event: ReactPointerEvent<HTMLDivElement>) => {
+      if (!resizeStartRef.current) return;
+      if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+        event.currentTarget.releasePointerCapture(event.pointerId);
+      }
+      resizeStartRef.current = null;
+      setIsResizing(false);
+    },
+    [setIsResizing],
+  );
 
   const nudgeSplitRatio = useCallback(
     (delta: number) => {
@@ -472,53 +448,6 @@ export function ChatWorkspace({ activeTarget }: ChatWorkspaceProps) {
     [activePaneId, closePane, navigate],
   );
 
-  const handleThreadDragEnter = useCallback(
-    (event: ReactDragEvent<HTMLDivElement>) => {
-      if (!canDropDraggedThread) return;
-      event.preventDefault();
-      setIsThreadDropTarget(true);
-    },
-    [canDropDraggedThread],
-  );
-
-  const handleThreadDragOver = useCallback(
-    (event: ReactDragEvent<HTMLDivElement>) => {
-      if (!canDropDraggedThread) return;
-      event.preventDefault();
-      event.dataTransfer.dropEffect = "copy";
-      setIsThreadDropTarget(true);
-    },
-    [canDropDraggedThread],
-  );
-
-  const handleThreadDragLeave = useCallback((event: ReactDragEvent<HTMLDivElement>) => {
-    const nextTarget = event.relatedTarget;
-    if (nextTarget instanceof Node && event.currentTarget.contains(nextTarget)) return;
-    setIsThreadDropTarget(false);
-  }, []);
-
-  const handleThreadDrop = useCallback(
-    (event: ReactDragEvent<HTMLDivElement>) => {
-      const threadRef = useChatWorkspaceStore.getState().draggingThreadRef;
-      if (threadRef === null) return;
-      event.preventDefault();
-      event.stopPropagation();
-      setIsThreadDropTarget(false);
-      useChatWorkspaceStore.getState().setDraggingThreadRef(null);
-      if (
-        isChatWorkspaceTargetOpen(useChatWorkspaceStore.getState().panes, {
-          kind: "server",
-          threadRef,
-        })
-      ) {
-        return;
-      }
-      openChatThreadInSplit(threadRef);
-      navigateToTarget(navigate, { kind: "server", threadRef });
-    },
-    [navigate],
-  );
-
   return (
     <SidebarInset className="h-svh min-h-0 overflow-hidden overscroll-y-none bg-background text-foreground md:h-dvh">
       <DiffWorkerPoolProvider>
@@ -534,14 +463,13 @@ export function ChatWorkspace({ activeTarget }: ChatWorkspaceProps) {
           <div
             ref={gridRef}
             data-chat-workspace-split={isResizable ? "true" : "false"}
+            data-chat-workspace-drop-target={canDropDraggedThread ? "" : undefined}
             className={cn(
               "relative grid min-h-0 min-w-0 flex-1 overflow-auto bg-background",
               isResizing && "select-none",
             )}
-            onDragEnter={handleThreadDragEnter}
-            onDragLeave={handleThreadDragLeave}
-            onDragOver={handleThreadDragOver}
-            onDrop={handleThreadDrop}
+            onPointerEnter={() => setIsThreadDropTarget(true)}
+            onPointerLeave={() => setIsThreadDropTarget(false)}
             style={{
               gridTemplateColumns: isResizable
                 ? `minmax(280px, ${splitRatio}fr) minmax(280px, ${1 - splitRatio}fr)`

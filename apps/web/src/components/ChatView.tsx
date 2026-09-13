@@ -336,7 +336,7 @@ import {
   useThreadStatus,
 } from "../state/entities";
 import { environmentShell } from "../state/shell";
-import { ChatComposer, type ChatComposerHandle } from "./chat/ChatComposer";
+import { ChatComposer } from "./chat/ChatComposer";
 import { createPageScrollController, type PageScrollKey } from "./chat/pageScrollController";
 import { DraftHeroHeadline } from "./chat/DraftHeroHeadline";
 import { ExpandedImageDialog } from "./chat/ExpandedImageDialog";
@@ -451,7 +451,7 @@ import {
 } from "./ChatView.logic";
 import { resolveThreadSyncPhase, type ThreadSyncPhase } from "../threadSync";
 import { useLocalStorage } from "~/hooks/useLocalStorage";
-import { useComposerHandleContext } from "../composerHandleContext";
+import { useComposerHandleRef } from "../composerHandleContext";
 import {
   awaitAttachmentUploads,
   getUploadedAttachments,
@@ -706,9 +706,8 @@ type ChatViewProps =
       onDiffPanelOpen?: () => void;
       reserveTitleBarControlInset?: boolean;
       forceExpandedMobileComposer?: boolean;
-      threadSyncPhase?: ThreadSyncPhase | null;
-      paneId?: string;
       isActivePane?: boolean;
+      threadSyncPhase?: ThreadSyncPhase | null;
       routeKind: "server";
       draftId?: never;
     }
@@ -718,9 +717,8 @@ type ChatViewProps =
       onDiffPanelOpen?: () => void;
       reserveTitleBarControlInset?: boolean;
       forceExpandedMobileComposer?: boolean;
-      threadSyncPhase?: never;
-      paneId?: string;
       isActivePane?: boolean;
+      threadSyncPhase?: never;
       routeKind: "draft";
       draftId: DraftId;
     };
@@ -1436,7 +1434,6 @@ export default function ChatView(props: ChatViewProps) {
     onDiffPanelOpen,
     reserveTitleBarControlInset = true,
     forceExpandedMobileComposer = false,
-    paneId,
     isActivePane = true,
   } = props;
   const draftId = routeKind === "draft" ? props.draftId : null;
@@ -1627,21 +1624,7 @@ export default function ChatView(props: ChatViewProps) {
   const composerImagesRef = useRef<ComposerImageAttachment[]>([]);
   const composerFilesRef = useRef<ComposerFileAttachment[]>([]);
   const composerTerminalContextsRef = useRef<TerminalContextDraft[]>([]);
-  const localComposerRef = useRef<ChatComposerHandle | null>(null);
-  const sharedComposerRef = useComposerHandleContext();
-  const composerRef = localComposerRef;
-
-  useEffect(() => {
-    if (!isActivePane || !sharedComposerRef) {
-      return;
-    }
-    sharedComposerRef.current = localComposerRef.current;
-    return () => {
-      if (sharedComposerRef.current === localComposerRef.current) {
-        sharedComposerRef.current = null;
-      }
-    };
-  }, [isActivePane, sharedComposerRef]);
+  const { composerRef, composerHandleRef } = useComposerHandleRef(isActivePane);
   const pasteAsTextShortcutUntilRef = useRef(0);
   const [restingComposerControlsHost, setRestingComposerControlsHost] =
     useState<HTMLDivElement | null>(null);
@@ -2041,19 +2024,9 @@ export default function ChatView(props: ChatViewProps) {
   }, [activePreviewMiniPlayer, activePreviewState.sessions, activeThreadRef]);
 
   const existingOpenTerminalThreadKeys = useMemo(() => {
-    if (paneId !== undefined) {
-      return activeThreadKey && terminalUiState.terminalOpen ? [activeThreadKey] : [];
-    }
     const existingThreadKeys = new Set<string>([...serverThreadKeys, ...draftThreadKeys]);
     return openTerminalThreadKeys.filter((nextThreadKey) => existingThreadKeys.has(nextThreadKey));
-  }, [
-    activeThreadKey,
-    draftThreadKeys,
-    openTerminalThreadKeys,
-    paneId,
-    serverThreadKeys,
-    terminalUiState.terminalOpen,
-  ]);
+  }, [draftThreadKeys, openTerminalThreadKeys, serverThreadKeys]);
   const activeLatestTurn = activeThread?.latestTurn ?? null;
   const activeRunningTurnId =
     (activeThread?.session?.status === "running" ? activeThread.session.activeTurnId : null) ??
@@ -3704,7 +3677,9 @@ export default function ChatView(props: ChatViewProps) {
   const focusComposer = useCallback(() => {
     composerRef.current?.focusAtEnd();
   }, [composerRef]);
-  useEffect(() => subscribeSnapShotComposerFocus(focusComposer), [focusComposer]);
+  useEffect(() => {
+    if (isActivePane) return subscribeSnapShotComposerFocus(focusComposer);
+  }, [isActivePane, focusComposer]);
   const scheduleComposerFocus = useCallback(() => {
     window.requestAnimationFrame(() => {
       focusComposer();
@@ -5196,6 +5171,7 @@ export default function ChatView(props: ChatViewProps) {
         // DOM focus on body, so these keys must also be heard at document.
         const handleKeyDown = (event: KeyboardEvent) => {
           if (
+            !isActivePane ||
             !(event.target instanceof Node) ||
             (!scrollNode.contains(event.target) &&
               event.target !== document.body &&
@@ -5263,7 +5239,12 @@ export default function ChatView(props: ChatViewProps) {
       }
       removeListeners?.();
     };
-  }, [activeThread?.id, isTimelineAtLogicalEnd, timelineRealContentOverflowsViewport]);
+  }, [
+    activeThread?.id,
+    isActivePane,
+    isTimelineAtLogicalEnd,
+    timelineRealContentOverflowsViewport,
+  ]);
 
   const onTimelineAnchorReady = useCallback((messageId: MessageId, anchorIndex: number) => {
     // Anchored-end space can be remeasured when the turn completes. Once the
@@ -5415,15 +5396,18 @@ export default function ChatView(props: ChatViewProps) {
     // activeThreadRef resets transitively with the active thread.
   }, [activeThread?.id]);
 
+  const focusActiveComposer = useEffectEvent(() => {
+    if (isActivePane) focusComposer();
+  });
   useEffect(() => {
-    if (!isActivePane || !activeThread?.id || terminalUiState.terminalOpen) return;
+    if (!activeThread?.id || terminalUiState.terminalOpen) return;
     const frame = window.requestAnimationFrame(() => {
-      focusComposer();
+      focusActiveComposer();
     });
     return () => {
       window.cancelAnimationFrame(frame);
     };
-  }, [activeThread?.id, focusComposer, isActivePane, terminalUiState.terminalOpen]);
+  }, [activeThread?.id, terminalUiState.terminalOpen]);
 
   // Tabbing back into the app lands focus wherever it last was, often the right panel or the
   // body. Put it in the composer unless something that takes typing already holds it. The
@@ -5431,7 +5415,8 @@ export default function ChatView(props: ChatViewProps) {
   // terminal is a surface and is recognized by the predicate instead. Mobile is left alone so
   // returning to the app does not raise the keyboard.
   useEffect(() => {
-    if (!activeThread?.id || terminalUiState.terminalOpen || isMobileViewport) return;
+    if (!isActivePane || !activeThread?.id || terminalUiState.terminalOpen || isMobileViewport)
+      return;
     let frame: number | null = null;
     const onWindowFocus = () => {
       if (frame !== null) window.cancelAnimationFrame(frame);
@@ -5450,7 +5435,13 @@ export default function ChatView(props: ChatViewProps) {
       window.removeEventListener("focus", onWindowFocus);
       if (frame !== null) window.cancelAnimationFrame(frame);
     };
-  }, [activeThread?.id, focusComposer, isMobileViewport, terminalUiState.terminalOpen]);
+  }, [
+    isActivePane,
+    activeThread?.id,
+    focusComposer,
+    isMobileViewport,
+    terminalUiState.terminalOpen,
+  ]);
 
   useEffect(() => {
     if (!activeThread?.id) return;
@@ -6308,13 +6299,11 @@ export default function ChatView(props: ChatViewProps) {
     }
 
     terminalUiOpenByThreadRef.current[activeThreadKey] = current;
-  }, [activeThreadKey, focusComposer, isActivePane, terminalUiState.terminalOpen]);
+  }, [isActivePane, activeThreadKey, focusComposer, terminalUiState.terminalOpen]);
 
   useEffect(() => {
-    if (!isActivePane) {
-      return;
-    }
     const handler = (event: globalThis.KeyboardEvent) => {
+      if (!isActivePane) return;
       if (preventRepeatedTerminalCloseShortcut(event, keybindings)) {
         event.stopPropagation();
         return;
@@ -6529,6 +6518,7 @@ export default function ChatView(props: ChatViewProps) {
     window.addEventListener("keydown", handler, true);
     return () => window.removeEventListener("keydown", handler, true);
   }, [
+    isActivePane,
     activeProject,
     activeRightPanelSurface,
     activeProjectScripts,
@@ -6544,7 +6534,6 @@ export default function ChatView(props: ChatViewProps) {
     requestCloseTerminal,
     requestClosePanelTerminal,
     createNewTerminal,
-    isActivePane,
     setTerminalOpen,
     runProjectScript,
     splitTerminal,
@@ -6580,7 +6569,7 @@ export default function ChatView(props: ChatViewProps) {
       }
     };
     const handler = (event: ClipboardEvent) => {
-      if (!activeThreadId || isCommandPaletteOpen()) return;
+      if (!isActivePane || !activeThreadId || isCommandPaletteOpen()) return;
       if (getTerminalFocusOwner() !== null) return;
       if (composerRef.current?.isModelPickerOpen()) return;
       const text = pasteTextToFocusComposer(event);
@@ -6603,7 +6592,7 @@ export default function ChatView(props: ChatViewProps) {
       window.removeEventListener("keydown", keyHandler, true);
       window.removeEventListener("paste", handler, true);
     };
-  }, [activeThreadId, composerRef]);
+  }, [isActivePane, activeThreadId, composerRef]);
 
   const [pendingRevert, setPendingRevert] = useState<{
     turnCount: number;
@@ -8538,7 +8527,6 @@ export default function ChatView(props: ChatViewProps) {
         <DiffPanel
           key={`${activeThreadKey}:${diffPanelGitStatusResolutionKey}`}
           mode="embedded"
-          threadRef={activeThreadRef}
           composerDraftTarget={composerDraftTarget}
           initialGitScope={initialDiffPanelGitScope}
           workspaceMutationId={workspaceMutationId}
@@ -8942,7 +8930,8 @@ export default function ChatView(props: ChatViewProps) {
                       <ComposerSurface.Host>
                         <div ref={attachDraftHeroComposerAnchorRef} className="relative z-10">
                           <ChatComposer
-                            composerRef={composerRef}
+                            isActivePane={isActivePane}
+                            composerRef={composerHandleRef}
                             composerDraftTarget={composerDraftTarget}
                             environmentId={environmentId}
                             attachmentUploadsCapabilityKnown={attachmentUploadsCapabilityKnown}

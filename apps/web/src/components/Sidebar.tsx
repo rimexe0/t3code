@@ -5,6 +5,7 @@ import { replaceComposerContextReferences } from "@t3tools/shared/composerContex
 import * as Schema from "effect/Schema";
 import {
   DndContext,
+  defaultAnnouncements,
   useSensor,
   useSensors,
   type DragEndEvent,
@@ -2135,8 +2136,11 @@ export default function Sidebar() {
         : new Set<string>(),
     [chatWorkspacePanes],
   );
-  const isSplitViewThread = (thread: EnvironmentThreadShell) =>
-    splitViewThreadKeys.has(scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)));
+  const isSplitViewThread = useCallback(
+    (thread: EnvironmentThreadShell) =>
+      splitViewThreadKeys.has(scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id))),
+    [splitViewThreadKeys],
+  );
   const router = useRouter();
   const { isMobile, setOpenMobile } = useSidebar();
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
@@ -3190,11 +3194,23 @@ export default function Sidebar() {
   const cancelThreadDrag = useCallback(() => {
     dragSensorRef.current?.cancel();
   }, []);
+  const dropThreadInWorkspace = useCallback(
+    (event: PointerEvent) => {
+      const target = document.elementFromPoint(event.clientX, event.clientY);
+      const { draggingThreadRef } = useChatWorkspaceStore.getState();
+      if (!draggingThreadRef || !target?.closest("[data-chat-workspace-drop-target]")) return false;
+      openChatThreadInSplit(draggingThreadRef);
+      navigateToThread(draggingThreadRef);
+      return true;
+    },
+    [navigateToThread],
+  );
   const dndSensors = useSensors(
     useSensor(SidebarPointerSensor, {
       distance: 6,
       onAttach: attachDragSensor,
       onFinish: finishThreadDrag,
+      onDropOutside: dropThreadInWorkspace,
     }),
   );
   const sectionByThreadKey = useMemo(() => {
@@ -3381,16 +3397,10 @@ export default function Sidebar() {
           const key = scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id));
           return { kind: "thread", key, section };
         });
-    const nonSplitPinnedThreads = pinnedThreads.filter((thread) => !isSplitViewThread(thread));
-    const nonSplitActiveThreads = activeThreads.filter((thread) => !isSplitViewThread(thread));
-    const nonSplitSnoozedThreads = snoozedThreads.filter((thread) => !isSplitViewThread(thread));
-    const nonSplitSettledThreads = settledThreads.filter((thread) => !isSplitViewThread(thread));
     if (
-      nonSplitPinnedThreads.length +
-        nonSplitActiveThreads.length +
-        nonSplitSnoozedThreads.length +
-        nonSplitSettledThreads.length ===
-      0
+      [pinnedThreads, activeThreads, snoozedThreads, settledThreads].every((list) =>
+        list.every(isSplitViewThread),
+      )
     ) {
       return [];
     }
@@ -3401,7 +3411,7 @@ export default function Sidebar() {
     const activeRows = rowsOf(activeThreads, "active");
     items.push({ kind: "marker", marker: "active-placeholder" });
     items.push(...activeRows);
-    if (nonSplitSnoozedThreads.length > 0) {
+    if (snoozedThreads.some((thread) => !isSplitViewThread(thread))) {
       items.push({ kind: "marker", marker: "snoozed-header" });
       items.push(...rowsOf(visibleSnoozedThreads, "snoozed"));
     }
@@ -3412,11 +3422,11 @@ export default function Sidebar() {
     return items;
   }, [
     activeThreads,
+    isSplitViewThread,
     pinnedThreads,
     renderedSettledThreads,
     settledThreads,
     snoozedThreads,
-    splitViewThreadKeys,
     visibleSnoozedThreads,
   ]);
   useEffect(() => {
@@ -4118,6 +4128,7 @@ export default function Sidebar() {
           }
           case "open-in-split":
             openChatThreadInSplit(threadRef);
+            navigateToThread(threadRef);
             return;
           case "new-thread-on-branch": {
             // Explicit branch carry-over: reuse the thread's worktree when it
@@ -4280,6 +4291,7 @@ export default function Sidebar() {
       markThreadUnread,
       openProjectSettings,
       projectByKey,
+      navigateToThread,
       serverConfigs,
       startThreadRename,
       updateThreadMetadata,
@@ -4634,6 +4646,21 @@ export default function Sidebar() {
               timeout={400}
             >
               <DndContext
+                accessibility={{
+                  announcements: {
+                    ...defaultAnnouncements,
+                    onDragCancel: (event) => {
+                      const threadRef = parseScopedThreadKey(String(event.active.id));
+                      return threadRef &&
+                        isChatWorkspaceTargetOpen(useChatWorkspaceStore.getState().panes, {
+                          kind: "server",
+                          threadRef,
+                        })
+                        ? "Opened thread in split view."
+                        : defaultAnnouncements.onDragCancel(event);
+                    },
+                  },
+                }}
                 sensors={dndSensors}
                 collisionDetection={dndCollisionDetection}
                 modifiers={[

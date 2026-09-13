@@ -33,7 +33,15 @@ describe("buildThreadActionMenuItems", () => {
         ...baseState,
         supports: { settlement: false, snooze: false, pinning: false, titleRegeneration: false },
       }),
-    ).toEqual(["open-in-split", "rename", "mark-unread", "copy", "project-settings", "archive", "delete"]);
+    ).toEqual([
+      "open-in-split",
+      "rename",
+      "mark-unread",
+      "copy",
+      "project-settings",
+      "archive",
+      "delete",
+    ]);
   });
 
   it("groups project settings with utility actions before archive", () => {
@@ -49,7 +57,9 @@ describe("buildThreadActionMenuItems", () => {
 
   it("omits open-in-split when the current pane already owns the thread", () => {
     expect(ids(baseState)).toContain("open-in-split");
-    expect(buildThreadActionMenuItems(baseState, { includeOpenInSplit: false })[0]?.id).toBe("pin");
+    expect(buildThreadActionMenuItems(baseState, { includeOpenInSplit: false })).not.toContainEqual(
+      expect.objectContaining({ id: "open-in-split" }),
+    );
   });
 
   it("includes branch items only for threads with a branch", () => {

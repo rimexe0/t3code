@@ -78,6 +78,8 @@ interface Props {
   tabId?: string | null;
   configuredUrls?: ReadonlyArray<string> | undefined;
   visible: boolean;
+  /** Split view: keyboard preview actions are handled by the active pane only. */
+  isActivePane?: boolean;
   onSendAnnotation?: (
     annotation: PreviewAnnotationPayload,
     image: ComposerImageAttachment | null,
@@ -102,6 +104,7 @@ export function PreviewView({
   tabId: requestedTabId,
   configuredUrls,
   visible,
+  isActivePane = true,
   onSendAnnotation,
 }: Props) {
   const [focusUrlNonce, setFocusUrlNonce] = useState<number | undefined>(undefined);
@@ -683,6 +686,7 @@ export function PreviewView({
   useEffect(() => {
     if (!visible) return;
     return subscribePreviewAction((action) => {
+      if (!isActivePane) return;
       switch (action) {
         case "refresh":
           handleRefresh();
@@ -703,7 +707,7 @@ export function PreviewView({
           return;
       }
     });
-  }, [handleRefresh, handleResetZoom, handleZoomIn, handleZoomOut, visible]);
+  }, [handleRefresh, handleResetZoom, handleZoomIn, handleZoomOut, isActivePane, visible]);
 
   return (
     <div

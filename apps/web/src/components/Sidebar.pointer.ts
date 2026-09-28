@@ -12,6 +12,8 @@ type Options = {
   distance: number;
   onAttach: (sensor: SidebarPointerSensor) => void;
   onFinish: (started: boolean) => void;
+  onDropOutside?: (event: PointerEvent) => boolean;
+  onMoveOutside?: (event: PointerEvent) => boolean;
 };
 
 /** A sidebar gesture ends on release, cancellation, or loss of its window.
@@ -84,17 +86,22 @@ export class SidebarPointerSensor {
       this.document.addEventListener("click", this.suppressClick, { capture: true });
       this.document.addEventListener("selectionchange", this.clearSelection);
       this.clearSelection();
+      this.autoScrollEnabled = this.props.options.onMoveOutside?.(event) !== true;
       this.props.onStart(this.coordinates());
       return;
     }
     if (this.phase === "dragging") {
       if (event.cancelable) event.preventDefault();
+      this.autoScrollEnabled = this.props.options.onMoveOutside?.(event) !== true;
       this.props.onMove(coordinates);
     }
   };
 
   private end = (event: PointerEvent) => {
-    if (event.pointerId === this.pointer.pointerId) this.finish(false);
+    if (event.pointerId !== this.pointer.pointerId) return;
+    const outside = this.phase === "dragging" && this.props.options.onMoveOutside?.(event);
+    const consumed = this.phase === "dragging" && this.props.options.onDropOutside?.(event);
+    this.finish(consumed === true || outside === true);
   };
   private pointerCancel = (event: PointerEvent) => {
     if (event.pointerId === this.pointer.pointerId) this.cancel();

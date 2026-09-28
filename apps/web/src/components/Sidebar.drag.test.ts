@@ -124,6 +124,18 @@ describe("sidebar collision detection", () => {
     expect(detector(collisionArgs())[0]?.id).toBe("blocked");
   });
 
+  it("stops reordering outside the sidebar and resumes when the pointer returns", () => {
+    const detector = createSidebarCollisionDetection(() => true, {
+      getSidebarRect: () => ({ left: 0, right: 280 }),
+    });
+    const args = collisionArgs();
+    const at = (x: number) => detector({ ...args, pointerCoordinates: { x, y: 200 } });
+    expect(at(130)[0]?.id).toBe("blocked");
+    expect(at(500)).toEqual([]);
+    expect(at(-1)).toEqual([]);
+    expect(at(130)[0]?.id).toBe("blocked");
+  });
+
   it.each([
     { sourceSection: "active", pins: 0 },
     { sourceSection: "active", pins: 1 },

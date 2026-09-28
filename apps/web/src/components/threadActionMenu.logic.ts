@@ -10,6 +10,7 @@ export type ThreadActionMenuId =
   | "new-thread-on-branch"
   | "filter-by-project"
   | "project-settings"
+  | "open-in-split"
   | "pin"
   | "unpin"
   | "settle"
@@ -68,8 +69,12 @@ export interface ThreadActionMenuState {
  */
 export function buildThreadActionMenuItems(
   state: ThreadActionMenuState,
+  options: { readonly includeOpenInSplit?: boolean } = {},
 ): ReadonlyArray<ContextMenuItem<ThreadActionMenuId>> {
   return [
+    ...(options.includeOpenInSplit === false
+      ? []
+      : [{ id: "open-in-split" as const, label: "Open in split" }]),
     ...(state.branch
       ? [
           {

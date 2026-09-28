@@ -47,7 +47,15 @@ describe("buildThreadActionMenuItems", () => {
           titleRegeneration: false,
         },
       }),
-    ).toEqual(["rename", "mark-unread", "copy", "project-settings", "archive", "delete"]);
+    ).toEqual([
+      "open-in-split",
+      "rename",
+      "mark-unread",
+      "copy",
+      "project-settings",
+      "archive",
+      "delete",
+    ]);
   });
 
   it("groups project settings with utility actions before archive", () => {
@@ -80,6 +88,13 @@ describe("buildThreadActionMenuItems", () => {
     expect(items[filterIndex]).toMatchObject({ label: "Show all projects", icon: "folder-tree" });
     expect(items[filterIndex - 1]?.id).toBe("mark-unread");
     expect(items[filterIndex + 1]?.id).toBe("auto-settle");
+  });
+
+  it("omits open-in-split when the current pane already owns the thread", () => {
+    expect(ids(baseState)).toContain("open-in-split");
+    expect(buildThreadActionMenuItems(baseState, { includeOpenInSplit: false })).not.toContainEqual(
+      expect.objectContaining({ id: "open-in-split" }),
+    );
   });
 
   it("includes branch items only for threads with a branch", () => {

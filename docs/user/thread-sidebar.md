@@ -25,6 +25,19 @@ in a new thread's model picker to add or remove them. A regular click returns to
 single model. Choose a base branch and send. Each selection starts a separate thread
 and worktree while you stay in the new thread composer. This requires a Git project.
 
+## Work in split view
+
+On web and desktop, choose **Open in split** from a thread's menu, or drag a
+sidebar thread into the chat area. Each pane keeps its own conversation and
+composer. Click a pane or its tab to focus it; keyboard shortcuts follow the
+focused pane. With two panes side by side, drag the divider to resize them, or
+focus the divider and use the left and right arrow keys.
+
+Open conversations share one highlighted group in the sidebar. An empty draft
+stays in the tab strip until it has content to show in the sidebar. Closing a
+pane removes it from the layout without deleting the conversation. You can open
+it again from the sidebar. The layout is saved on the current client.
+
 ## Pin and reorder threads
 
 Pin a thread from its menu to keep it above your active work.

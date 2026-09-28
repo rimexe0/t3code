@@ -3,10 +3,9 @@ import type { ScopedThreadRef } from "@t3tools/contracts";
 import { useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 
-import ChatView from "./ChatView";
 import { resolveDraftPromotionNavigationTarget, threadHasStarted } from "./ChatView.logic";
 import { waitForDraftHeroTransition } from "./chat/draftHeroTransition";
-import { SidebarInset } from "./ui/sidebar";
+import { ChatWorkspace } from "./ChatWorkspace";
 import {
   finalizePromotedDraftThreadByRef,
   markPromotedDraftThreadByRef,
@@ -180,35 +179,17 @@ export function ThreadRouteView({ target }: { target: ThreadRouteTarget }) {
     finalizePromotedDraftThreadByRef(target.threadRef);
   }, [draftThread, serverThreadStarted, target]);
 
-  let view: React.ReactNode = null;
-  if (target.kind === "draft") {
-    if (draftSession) {
-      view = (
-        <ChatView
-          key={target.draftId}
-          draftId={target.draftId}
-          environmentId={draftSession.environmentId}
-          threadId={draftSession.threadId}
-          routeKind="draft"
-          forceExpandedMobileComposer
-        />
-      );
-    }
-  } else if (renderState === "ready" || (renderState === "loading" && serverThreadShell !== null)) {
-    view = (
-      <ChatView
-        {...(nextChatViewKey ? { key: nextChatViewKey.key } : {})}
-        environmentId={target.threadRef.environmentId}
-        threadId={target.threadRef.threadId}
-        routeKind="server"
-        threadSyncPhase={threadSyncPhase}
-      />
-    );
-  }
+  const routePaneReady =
+    target.kind === "draft"
+      ? draftSession !== null
+      : renderState === "ready" || (renderState === "loading" && serverThreadShell !== null);
 
   return (
-    <SidebarInset className="h-svh min-h-0 overflow-hidden overscroll-y-none md:h-dvh">
-      {view}
-    </SidebarInset>
+    <ChatWorkspace
+      activeTarget={target}
+      routePaneKey={target.kind === "draft" ? target.draftId : (nextChatViewKey?.key ?? null)}
+      routePaneReady={routePaneReady}
+      routeThreadSyncPhase={target.kind === "server" ? threadSyncPhase : null}
+    />
   );
 }

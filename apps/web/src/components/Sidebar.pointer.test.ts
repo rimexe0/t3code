@@ -23,7 +23,10 @@ function pointer(type: string, values: Partial<PointerEvent> = {}) {
   });
 }
 
-function gesture() {
+function gesture(
+  onDropOutside = vi.fn(() => false),
+  onMoveOutside: (event: PointerEvent) => boolean = vi.fn(() => false),
+) {
   const callbacks = {
     onStart: vi.fn(),
     onMove: vi.fn(),
@@ -37,7 +40,7 @@ function gesture() {
   const props = {
     active: "thread",
     event: pointer("pointerdown"),
-    options: { distance: 6, onAttach: vi.fn(), onFinish },
+    options: { distance: 6, onAttach: vi.fn(), onFinish, onDropOutside, onMoveOutside },
     ...callbacks,
   } as unknown as SensorProps<ConstructorParameters<typeof SidebarPointerSensor>[0]["options"]>;
   const sensor = new SidebarPointerSensor(props);
@@ -61,6 +64,65 @@ afterEach(() => {
 });
 
 describe("sidebar pointer lifecycle", () => {
+  it("cancels an invalid outside drop using release coordinates, even without an outside move", () => {
+    const drag = gesture(
+      vi.fn(() => false),
+      (event) => event.clientX > 280,
+    );
+    document.dispatchEvent(pointer("pointermove", { clientY: 20 }));
+    document.dispatchEvent(pointer("pointerup", { clientX: 500, buttons: 0 }));
+    expect(drag.onEnd).not.toHaveBeenCalled();
+    expect(drag.onCancel).toHaveBeenCalledOnce();
+  });
+
+  it("hands raw horizontal movement to split dragging and resumes sidebar autoscroll on return", () => {
+    const onMoveOutside = vi.fn((event: PointerEvent) => event.clientX > 280);
+    const drag = gesture(
+      vi.fn(() => false),
+      onMoveOutside,
+    );
+    document.dispatchEvent(pointer("pointermove", { clientX: 500 }));
+    expect(onMoveOutside).toHaveBeenCalledWith(expect.objectContaining({ clientX: 500 }));
+    expect(drag.sensor.autoScrollEnabled).toBe(false);
+    document.dispatchEvent(pointer("pointermove", { clientX: 550, clientY: 100 }));
+    expect(drag.onMove).toHaveBeenLastCalledWith({ x: 550, y: 100 });
+    document.dispatchEvent(pointer("pointermove", { clientX: 130, clientY: 100 }));
+    expect(drag.sensor.autoScrollEnabled).toBe(true);
+    document.dispatchEvent(pointer("pointerup", { clientX: 130, buttons: 0 }));
+    expect(drag.onEnd).toHaveBeenCalledOnce();
+    expect(drag.onCancel).not.toHaveBeenCalled();
+    const calls = onMoveOutside.mock.calls.length;
+    document.dispatchEvent(pointer("pointermove", { clientX: 500 }));
+    expect(onMoveOutside).toHaveBeenCalledTimes(calls);
+  });
+
+  it("consumes a workspace drop before cleanup without applying a sidebar reorder", () => {
+    const order: string[] = [];
+    const onDrop = vi.fn(() => {
+      order.push("split");
+      return true;
+    });
+    const drag = gesture(onDrop);
+    drag.onFinish.mockImplementation(() => order.push("cleanup"));
+    document.dispatchEvent(pointer("pointermove", { clientY: 20 }));
+    document.dispatchEvent(pointer("pointerup", { clientX: 500, buttons: 0 }));
+    expect(onDrop).toHaveBeenCalledOnce();
+    expect(order).toEqual(["split", "cleanup"]);
+    expect(drag.onEnd).not.toHaveBeenCalled();
+    expect(drag.onCancel).toHaveBeenCalledOnce();
+  });
+
+  it("does not split on a click, cancellation, or another pointer's release", () => {
+    const onDrop = vi.fn(() => true);
+    gesture(onDrop);
+    document.dispatchEvent(pointer("pointerup", { buttons: 0 }));
+    const drag = gesture(onDrop);
+    document.dispatchEvent(pointer("pointermove", { clientY: 20 }));
+    document.dispatchEvent(pointer("pointerup", { pointerId: 2, buttons: 0 }));
+    drag.sensor.cancel();
+    expect(onDrop).not.toHaveBeenCalled();
+  });
+
   it("keeps a click idle and starts only after the drag threshold", () => {
     const click = gesture();
     document.dispatchEvent(pointer("pointermove", { clientY: 16 }));

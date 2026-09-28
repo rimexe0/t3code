@@ -133,7 +133,11 @@ export const useDiffPanelStore = create<DiffPanelStoreState>()(
 export function selectThreadDiffPanelSelection(
   byThreadKey: Record<string, DiffPanelSelection>,
   ref: ScopedThreadRef | null | undefined,
+  hasWorkingTreeChanges = false,
 ): DiffPanelSelection {
   if (!ref) return DEFAULT_SELECTION;
-  return byThreadKey[scopedThreadKey(ref)] ?? DEFAULT_SELECTION;
+  return (
+    byThreadKey[scopedThreadKey(ref)] ??
+    (hasWorkingTreeChanges ? DEFAULT_SELECTION : { kind: "branch", baseRef: null })
+  );
 }

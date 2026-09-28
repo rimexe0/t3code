@@ -20,12 +20,18 @@ vi.mock("../components/ChatView", () => ({ default: state.chatRender }));
 vi.mock("../components/ui/sidebar", () => ({
   SidebarInset: ({ children }: { children: ReactNode }) => children,
 }));
-vi.mock("../components/ChatView.logic", () => ({ threadHasStarted: () => false }));
+vi.mock("../components/ChatView.logic", () => ({
+  resolveDraftPromotionNavigationTarget: () => null,
+  threadHasStarted: () => false,
+}));
+vi.mock("../components/ChatWorkspace", () => ({ ChatWorkspace: () => null }));
 vi.mock("../state/entities", () => ({
+  useThread: () => null,
   useThreadShell: () => state.shell,
   useThreadDetail: () => state.detail,
   useThreadStatus: () => null,
   useEnvironmentThreadRefs: () => [],
+  useThreadRefs: () => [],
 }));
 vi.mock("../state/query", () => ({
   useEnvironmentQuery: () => ({ data: { snapshot: { _tag: "Some" } } }),
@@ -34,14 +40,25 @@ vi.mock("../state/shell", () => ({ environmentShell: { stateAtom: () => null } }
 vi.mock("../composerDraftStore", () => ({
   useComposerDraftStore: (
     select: (store: {
+      getDraftSession: () => null;
+      getDraftIdByRef: () => null;
       getDraftThreadByRef: () => null;
       hasDraftThreadsInEnvironment: () => boolean;
     }) => unknown,
-  ) => select({ getDraftThreadByRef: () => null, hasDraftThreadsInEnvironment: () => false }),
+  ) =>
+    select({
+      getDraftSession: () => null,
+      getDraftIdByRef: () => null,
+      getDraftThreadByRef: () => null,
+      hasDraftThreadsInEnvironment: () => false,
+    }),
   finalizePromotedDraftThreadByRef: vi.fn(),
+  markPromotedDraftThreadByRef: vi.fn(),
+  useBackgroundDraftSubmissionPending: () => false,
 }));
 
 import { Route } from "./_chat.$environmentId.$threadId";
+import { ThreadRouteView } from "../components/ThreadRouteView";
 import { useSidebarPendingFileDropStore } from "../sidebarPendingFileDropStore";
 
 const threadRef = {
@@ -49,6 +66,10 @@ const threadRef = {
   threadId: ThreadId.make("thread-1"),
 };
 let renderer: ReactTestRenderer | undefined;
+
+function MissingThreadRouteView() {
+  return <ThreadRouteView target={{ kind: "server", threadRef }} />;
+}
 
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
@@ -67,12 +88,12 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
-async function openThread() {
+async function openThread(component = Route.options.component!) {
   const root = createRootRoute();
   const route = createRoute({
     getParentRoute: () => root,
     path: "/$environmentId/$threadId",
-    component: Route.options.component!,
+    component,
   });
   const router = createRouter({
     routeTree: root.addChildren([route]),
@@ -104,7 +125,7 @@ it("still releases missing-thread drops without clearing another pane's pending 
     threadRef: { ...threadRef, threadId: ThreadId.make("thread-2") },
     files: [],
   });
-  const router = await openThread();
+  const router = await openThread(MissingThreadRouteView);
   expect(useSidebarPendingFileDropStore.getState().pending.map((drop) => drop.id)).toEqual([
     otherDrop,
   ]);

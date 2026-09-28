@@ -82,12 +82,11 @@ function WorkspacePane({
     return (
       <ChatView
         {...(routePaneKey ? { key: routePaneKey } : {})}
-        paneId={pane.id}
         isActivePane={isActivePane}
         reserveTitleBarControlInset={paneCount === 1}
         environmentId={pane.target.threadRef.environmentId}
         threadId={pane.target.threadRef.threadId}
-        threadSyncPhase={threadSyncPhase}
+        {...(threadSyncPhase !== undefined ? { threadSyncPhase } : {})}
         routeKind="server"
       />
     );
@@ -100,7 +99,6 @@ function WorkspacePane({
   return (
     <ChatView
       {...(routePaneKey ? { key: routePaneKey } : {})}
-      paneId={pane.id}
       isActivePane={isActivePane}
       reserveTitleBarControlInset={paneCount === 1}
       draftId={draftId}
@@ -232,9 +230,9 @@ function PaneTab({
       <Button
         type="button"
         aria-label={`Close pane ${paneIndex}`}
-        className="mr-1 hover:bg-destructive/10 hover:text-destructive"
+        className="mr-1"
         size="icon-micro"
-        variant="ghost-muted"
+        variant="ghost-destructive"
         onClick={onClose}
       >
         <XIcon aria-hidden />
@@ -258,7 +256,7 @@ function PaneStrip({
     <div
       className={cn(
         "drag-region @container/workspace-tabs flex min-h-0 min-w-0 shrink-0 items-center border-b border-border/60 bg-muted/20 px-0",
-        "wco:pr-[var(--workspace-native-controls-inset)]",
+        "wco:pr-(--workspace-native-controls-inset)",
         COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS,
       )}
     >
@@ -291,7 +289,7 @@ function ThreadSplitDropOverlay({
 }) {
   return (
     <div
-      className="pointer-events-none absolute inset-3 z-30 grid min-w-0 gap-3 rounded-lg bg-background/75 p-3 backdrop-blur-[2px]"
+      className="pointer-events-none absolute inset-3 z-30 grid min-w-0 gap-3 rounded-lg bg-background/75 p-3 backdrop-blur-xs"
       style={{ gridTemplateColumns: `repeat(${paneCount + 1}, minmax(0, 1fr))` }}
     >
       {Array.from({ length: paneCount }, (_, index) => (
@@ -350,6 +348,7 @@ export function ChatWorkspace({
   const navigate = useNavigate();
   const panes = useChatWorkspaceStore((state) => state.panes);
   const storedActivePaneId = useChatWorkspaceStore((state) => state.activePaneId);
+  const reconciledTargetKey = useChatWorkspaceStore((state) => state.routeTargetKey);
   const splitRatio = useChatWorkspaceStore((state) => state.splitRatio);
   const reconcileRouteTarget = useChatWorkspaceStore((state) => state.reconcileRouteTarget);
   const focusPane = useChatWorkspaceStore((state) => state.focusPane);
@@ -370,14 +369,19 @@ export function ChatWorkspace({
   } | null>(null);
   const [isResizing, setIsResizing] = useState(false);
   const [isThreadDropTarget, setIsThreadDropTarget] = useState(false);
+  const routeTargetChanged = reconciledTargetKey !== activeTargetKey;
   const isWideEnoughForSplit = useMediaQuery("md");
 
   useEffect(() => {
+    if (!routeTargetChanged) return;
     reconcileRouteTarget(activeTarget);
-  }, [activeTarget, reconcileRouteTarget]);
+  }, [activeTarget, routeTargetChanged, reconcileRouteTarget]);
 
-  const visiblePanes: ReadonlyArray<ChatWorkspacePane> =
-    panes.length === 0
+  // Pane actions update the store before navigation commits. Only a new route
+  // may replace a pane; the old URL must not resurrect a just-closed chat.
+  const visiblePanes: ReadonlyArray<ChatWorkspacePane> = !routeTargetChanged
+    ? panes
+    : panes.length === 0
       ? [{ id: activeTargetKey, target: activeTarget }]
       : panes.some((pane) => pane.id === activeTargetKey)
         ? panes
@@ -386,7 +390,7 @@ export function ChatWorkspace({
               ? { id: activeTargetKey, target: activeTarget }
               : pane,
           );
-  const activePaneId = visiblePanes.some((pane) => pane.id === activeTargetKey)
+  const activePaneId = routeTargetChanged
     ? activeTargetKey
     : (storedActivePaneId ?? activeTargetKey);
   const isResizable = visiblePanes.length === 2 && isWideEnoughForSplit;
@@ -471,7 +475,7 @@ export function ChatWorkspace({
   );
 
   return (
-    <SidebarInset className="h-svh min-h-0 overflow-hidden overscroll-y-none bg-background text-foreground md:h-dvh">
+    <SidebarInset className="h-svh min-h-0 overflow-hidden overscroll-y-none md:h-dvh">
       <DiffWorkerPoolProvider>
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
           {visiblePanes.length > 1 ? (
@@ -519,7 +523,7 @@ export function ChatWorkspace({
                     paneCount={paneCount}
                     routePaneKey={isRoutePane ? routePaneKey : null}
                     routePaneReady={!isRoutePane || routePaneReady}
-                    threadSyncPhase={isRoutePane ? routeThreadSyncPhase : undefined}
+                    {...(isRoutePane ? { threadSyncPhase: routeThreadSyncPhase } : {})}
                   />
                   {isResizable && paneOffset === 0 ? (
                     <PaneResizeHandle

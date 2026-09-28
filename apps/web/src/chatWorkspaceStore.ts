@@ -28,6 +28,7 @@ export const MAX_CHAT_WORKSPACE_SPLIT_RATIO = 0.75;
 interface ChatWorkspaceStoreState {
   readonly panes: ReadonlyArray<ChatWorkspacePane>;
   readonly activePaneId: string | null;
+  readonly routeTargetKey: string | null;
   readonly splitRatio: number;
   readonly draggingThreadRef: ScopedThreadRef | null;
   readonly addPane: (target: ChatWorkspaceTarget) => string;
@@ -159,6 +160,7 @@ export function mergePersistedChatWorkspaceState(
 const initialWorkspaceState = {
   panes: [] as ReadonlyArray<ChatWorkspacePane>,
   activePaneId: null as string | null,
+  routeTargetKey: null as string | null,
   splitRatio: DEFAULT_CHAT_WORKSPACE_SPLIT_RATIO,
   draggingThreadRef: null as ScopedThreadRef | null,
 };
@@ -221,16 +223,17 @@ export const useChatWorkspaceStore = create<ChatWorkspaceStoreState>()(
         set((state) => {
           const existing = paneForTarget(state.panes, target);
           if (existing) {
-            return { activePaneId: existing.id };
+            return { activePaneId: existing.id, routeTargetKey: id };
           }
           if (state.panes.length === 0 || state.activePaneId === null) {
-            return { panes: [{ id, target }], activePaneId: id };
+            return { panes: [{ id, target }], activePaneId: id, routeTargetKey: id };
           }
           return {
             panes: state.panes.map((pane) =>
               pane.id === state.activePaneId ? { id, target } : pane,
             ),
             activePaneId: id,
+            routeTargetKey: id,
           };
         });
       },

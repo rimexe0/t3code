@@ -1,7 +1,6 @@
 import { scopeProjectRef } from "@t3tools/client-runtime/environment";
 import { useNavigate } from "@tanstack/react-router";
 import {
-  type DragEvent as ReactDragEvent,
   useCallback,
   useEffect,
   useRef,
@@ -14,8 +13,6 @@ import { Columns2Icon, XIcon } from "lucide-react";
 
 import {
   chatWorkspaceTargetKey,
-  isChatWorkspaceTargetOpen,
-  openChatThreadInSplit,
   useChatWorkspaceStore,
   type ChatWorkspacePane,
   type ChatWorkspaceTarget,
@@ -23,23 +20,21 @@ import {
 import { useComposerDraftStore } from "../composerDraftStore";
 import { useProject, useThread } from "../state/entities";
 import { buildDraftThreadRouteParams, buildThreadRouteParams } from "../threadRoutes";
+import type { ThreadSyncPhase } from "../threadSync";
 import ChatView from "./ChatView";
 import { DiffWorkerPoolProvider } from "./DiffWorkerPoolProvider";
+import { Button } from "./ui/button";
 import { SidebarInset } from "./ui/sidebar";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
 import { useMediaQuery } from "../hooks/useMediaQuery";
 import { cn } from "~/lib/utils";
-
-export interface ChatWorkspacePaneRenderOptions {
-  readonly paneId: string;
-  readonly paneIndex: number;
-  readonly paneCount: number;
-  readonly isActivePane: boolean;
-}
+import { COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS } from "~/workspaceTitlebar";
 
 interface ChatWorkspaceProps {
   readonly activeTarget: ChatWorkspaceTarget;
-  readonly renderActivePane: (options: ChatWorkspacePaneRenderOptions) => ReactNode;
+  readonly routePaneKey?: string | null;
+  readonly routePaneReady?: boolean;
+  readonly routeThreadSyncPhase?: ThreadSyncPhase | null;
 }
 
 function navigateToTarget(
@@ -64,22 +59,35 @@ function navigateToTarget(
 function WorkspacePane({
   pane,
   isActivePane,
+  paneCount,
+  routePaneKey,
+  routePaneReady,
+  threadSyncPhase,
 }: {
   readonly pane: ChatWorkspacePane;
   readonly isActivePane: boolean;
+  readonly paneCount: number;
+  readonly routePaneKey?: string | null;
+  readonly routePaneReady: boolean;
+  readonly threadSyncPhase?: ThreadSyncPhase | null;
 }) {
   const draftId = pane.target.kind === "draft" ? pane.target.draftId : null;
   const draftSession = useComposerDraftStore((store) =>
     draftId ? store.getDraftSession(draftId) : null,
   );
 
+  if (!routePaneReady) return null;
+
   if (pane.target.kind === "server") {
     return (
       <ChatView
+        {...(routePaneKey ? { key: routePaneKey } : {})}
         paneId={pane.id}
         isActivePane={isActivePane}
+        reserveTitleBarControlInset={paneCount === 1}
         environmentId={pane.target.threadRef.environmentId}
         threadId={pane.target.threadRef.threadId}
+        threadSyncPhase={threadSyncPhase}
         routeKind="server"
       />
     );
@@ -91,12 +99,15 @@ function WorkspacePane({
 
   return (
     <ChatView
+      {...(routePaneKey ? { key: routePaneKey } : {})}
       paneId={pane.id}
       isActivePane={isActivePane}
+      reserveTitleBarControlInset={paneCount === 1}
       draftId={draftId}
       environmentId={draftSession.environmentId}
       threadId={draftSession.threadId}
       routeKind="draft"
+      forceExpandedMobileComposer
     />
   );
 }
@@ -202,7 +213,7 @@ function PaneTab({
             <button
               type="button"
               aria-pressed={isActivePane}
-              className="flex min-w-0 flex-1 items-center gap-1 overflow-hidden rounded-s-md px-1.5 py-1 text-left focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary/70"
+              className="flex min-w-0 flex-1 cursor-pointer items-center gap-1 overflow-hidden rounded-s-md px-1.5 py-1 text-left focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
               onClick={onActivate}
             />
           }
@@ -218,14 +229,16 @@ function PaneTab({
           {projectTitle ? `${title} · ${projectTitle}` : title}
         </TooltipPopup>
       </Tooltip>
-      <button
+      <Button
         type="button"
         aria-label={`Close pane ${paneIndex}`}
-        className="mr-0.5 ml-0.5 inline-flex size-4 shrink-0 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary/70"
+        className="mr-1 hover:bg-destructive/10 hover:text-destructive"
+        size="icon-micro"
+        variant="ghost-muted"
         onClick={onClose}
       >
-        <XIcon aria-hidden className="size-3" />
-      </button>
+        <XIcon aria-hidden />
+      </Button>
     </div>
   );
 }
@@ -242,7 +255,13 @@ function PaneStrip({
   readonly onClose: (pane: ChatWorkspacePane) => void;
 }) {
   return (
-    <div className="drag-region @container/workspace-tabs flex min-h-0 min-w-0 shrink-0 items-center border-b border-border/60 bg-muted/20 px-0">
+    <div
+      className={cn(
+        "drag-region @container/workspace-tabs flex min-h-0 min-w-0 shrink-0 items-center border-b border-border/60 bg-muted/20 px-0",
+        "wco:pr-[var(--workspace-native-controls-inset)]",
+        COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS,
+      )}
+    >
       <div
         role="toolbar"
         aria-label="Open chat panes"
@@ -322,7 +341,12 @@ function PaneFrame({
   );
 }
 
-export function ChatWorkspace({ activeTarget, renderActivePane }: ChatWorkspaceProps) {
+export function ChatWorkspace({
+  activeTarget,
+  routePaneKey = null,
+  routePaneReady = true,
+  routeThreadSyncPhase = null,
+}: ChatWorkspaceProps) {
   const navigate = useNavigate();
   const panes = useChatWorkspaceStore((state) => state.panes);
   const storedActivePaneId = useChatWorkspaceStore((state) => state.activePaneId);
@@ -334,12 +358,10 @@ export function ChatWorkspace({ activeTarget, renderActivePane }: ChatWorkspaceP
   const draggingThreadRef = useChatWorkspaceStore((state) => state.draggingThreadRef);
   const draggingThread = useThread(draggingThreadRef);
   const activeTargetKey = chatWorkspaceTargetKey(activeTarget);
-  const draggingThreadTarget =
+  const draggingThreadTargetKey =
     draggingThreadRef === null
       ? null
-      : ({ kind: "server", threadRef: draggingThreadRef } as const);
-  const draggingThreadTargetKey =
-    draggingThreadTarget === null ? null : chatWorkspaceTargetKey(draggingThreadTarget);
+      : chatWorkspaceTargetKey({ kind: "server", threadRef: draggingThreadRef });
   const gridRef = useRef<HTMLDivElement | null>(null);
   const resizeStartRef = useRef<{
     readonly startX: number;
@@ -351,12 +373,8 @@ export function ChatWorkspace({ activeTarget, renderActivePane }: ChatWorkspaceP
   const isWideEnoughForSplit = useMediaQuery("md");
 
   useEffect(() => {
-    if (draggingThreadRef === null) setIsThreadDropTarget(false);
-  }, [draggingThreadRef]);
-
-  useEffect(() => {
     reconcileRouteTarget(activeTarget);
-  }, [activeTargetKey, activeTarget, reconcileRouteTarget]);
+  }, [activeTarget, reconcileRouteTarget]);
 
   const visiblePanes: ReadonlyArray<ChatWorkspacePane> =
     panes.length === 0
@@ -392,7 +410,7 @@ export function ChatWorkspace({ activeTarget, renderActivePane }: ChatWorkspaceP
       };
       setIsResizing(true);
     },
-    [isResizable, splitRatio],
+    [isResizable, splitRatio, setIsResizing],
   );
 
   const handleResizePointerMove = useCallback(
@@ -406,14 +424,17 @@ export function ChatWorkspace({ activeTarget, renderActivePane }: ChatWorkspaceP
     [setSplitRatio],
   );
 
-  const finishResize = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
-    if (!resizeStartRef.current) return;
-    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-      event.currentTarget.releasePointerCapture(event.pointerId);
-    }
-    resizeStartRef.current = null;
-    setIsResizing(false);
-  }, []);
+  const finishResize = useCallback(
+    (event: ReactPointerEvent<HTMLDivElement>) => {
+      if (!resizeStartRef.current) return;
+      if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+        event.currentTarget.releasePointerCapture(event.pointerId);
+      }
+      resizeStartRef.current = null;
+      setIsResizing(false);
+    },
+    [setIsResizing],
+  );
 
   const nudgeSplitRatio = useCallback(
     (delta: number) => {
@@ -449,45 +470,6 @@ export function ChatWorkspace({ activeTarget, renderActivePane }: ChatWorkspaceP
     [activePaneId, closePane, navigate],
   );
 
-  const handleThreadDragEnter = useCallback((event: ReactDragEvent<HTMLDivElement>) => {
-    if (!canDropDraggedThread) return;
-    event.preventDefault();
-    setIsThreadDropTarget(true);
-  }, [canDropDraggedThread]);
-
-  const handleThreadDragOver = useCallback((event: ReactDragEvent<HTMLDivElement>) => {
-    if (!canDropDraggedThread) return;
-    event.preventDefault();
-    event.dataTransfer.dropEffect = "copy";
-    setIsThreadDropTarget(true);
-  }, [canDropDraggedThread]);
-
-  const handleThreadDragLeave = useCallback((event: ReactDragEvent<HTMLDivElement>) => {
-    const nextTarget = event.relatedTarget;
-    if (nextTarget instanceof Node && event.currentTarget.contains(nextTarget)) return;
-    setIsThreadDropTarget(false);
-  }, []);
-
-  const handleThreadDrop = useCallback(
-    (event: ReactDragEvent<HTMLDivElement>) => {
-      const threadRef = useChatWorkspaceStore.getState().draggingThreadRef;
-      if (threadRef === null) return;
-      event.preventDefault();
-      event.stopPropagation();
-      setIsThreadDropTarget(false);
-      useChatWorkspaceStore.getState().setDraggingThreadRef(null);
-      if (isChatWorkspaceTargetOpen(useChatWorkspaceStore.getState().panes, {
-        kind: "server",
-        threadRef,
-      })) {
-        return;
-      }
-      openChatThreadInSplit(threadRef);
-      navigateToTarget(navigate, { kind: "server", threadRef });
-    },
-    [navigate],
-  );
-
   return (
     <SidebarInset className="h-svh min-h-0 overflow-hidden overscroll-y-none bg-background text-foreground md:h-dvh">
       <DiffWorkerPoolProvider>
@@ -503,14 +485,13 @@ export function ChatWorkspace({ activeTarget, renderActivePane }: ChatWorkspaceP
           <div
             ref={gridRef}
             data-chat-workspace-split={isResizable ? "true" : "false"}
+            data-chat-workspace-drop-target={canDropDraggedThread ? "" : undefined}
             className={cn(
               "relative grid min-h-0 min-w-0 flex-1 overflow-auto bg-background",
               isResizing && "select-none",
             )}
-            onDragEnter={handleThreadDragEnter}
-            onDragLeave={handleThreadDragLeave}
-            onDragOver={handleThreadDragOver}
-            onDrop={handleThreadDrop}
+            onPointerEnter={() => setIsThreadDropTarget(true)}
+            onPointerLeave={() => setIsThreadDropTarget(false)}
             style={{
               gridTemplateColumns: isResizable
                 ? `minmax(280px, ${splitRatio}fr) minmax(280px, ${1 - splitRatio}fr)`
@@ -522,30 +503,24 @@ export function ChatWorkspace({ activeTarget, renderActivePane }: ChatWorkspaceP
               const paneIndex = paneOffset + 1;
               const paneCount = visiblePanes.length;
               const isActivePane = pane.id === activePaneId;
+              const isRoutePane = pane.id === activeTargetKey;
               const onActivate = () => activatePane(pane);
-              const content =
-                pane.id === activeTargetKey ? (
-                  renderActivePane({
-                    paneId: pane.id,
-                    paneIndex,
-                    paneCount,
-                    isActivePane,
-                  })
-                ) : (
-                  <WorkspacePane
-                    pane={pane}
-                    isActivePane={isActivePane}
-                  />
-                );
               return (
                 <PaneFrame
-                  key={pane.id}
+                  key={isRoutePane && routePaneKey ? routePaneKey : pane.id}
                   paneIndex={paneIndex}
                   paneCount={paneCount}
                   isActivePane={isActivePane}
                   onActivate={onActivate}
                 >
-                  {content}
+                  <WorkspacePane
+                    pane={pane}
+                    isActivePane={isActivePane}
+                    paneCount={paneCount}
+                    routePaneKey={isRoutePane ? routePaneKey : null}
+                    routePaneReady={!isRoutePane || routePaneReady}
+                    threadSyncPhase={isRoutePane ? routeThreadSyncPhase : undefined}
+                  />
                   {isResizable && paneOffset === 0 ? (
                     <PaneResizeHandle
                       splitRatio={splitRatio}

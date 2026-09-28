@@ -9,6 +9,7 @@ import {
   MIN_CHAT_WORKSPACE_SPLIT_RATIO,
   chatWorkspaceTargetKey,
   isChatWorkspaceTargetOpen,
+  mergePersistedChatWorkspaceState,
   parsePersistedChatWorkspaceState,
   useChatWorkspaceStore,
 } from "./chatWorkspaceStore";
@@ -48,6 +49,23 @@ describe("chatWorkspaceStore", () => {
     expect(parsePersistedChatWorkspaceState({}).splitRatio).toBe(
       DEFAULT_CHAT_WORKSPACE_SPLIT_RATIO,
     );
+  });
+
+  it("validates current-version state during hydration merges", () => {
+    const merged = mergePersistedChatWorkspaceState(
+      { panes: { invalid: true }, activePaneId: "stale", splitRatio: 0.9 },
+      {
+        panes: [],
+        activePaneId: null,
+        splitRatio: DEFAULT_CHAT_WORKSPACE_SPLIT_RATIO,
+      },
+    );
+
+    expect(merged).toEqual({
+      panes: [],
+      activePaneId: null,
+      splitRatio: MAX_CHAT_WORKSPACE_SPLIT_RATIO,
+    });
   });
 
   it("adds panes, focuses an existing target, and closes to a neighboring pane", () => {

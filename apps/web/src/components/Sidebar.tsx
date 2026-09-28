@@ -6,17 +6,18 @@ import { replaceComposerContextReferences } from "@t3tools/shared/composerContex
 import * as Schema from "effect/Schema";
 import {
   DndContext,
+  DragOverlay,
   defaultAnnouncements,
   useSensor,
   useSensors,
   type DragEndEvent,
   type DragOverEvent,
   type DragStartEvent,
-  type Modifier,
 } from "@dnd-kit/core";
 import { SortableContext, useSortable } from "@dnd-kit/sortable";
-import { restrictToFirstScrollableAncestor, restrictToVerticalAxis } from "@dnd-kit/modifiers";
+import { restrictToWindowEdges } from "@dnd-kit/modifiers";
 import { CSS } from "@dnd-kit/utilities";
+import { createPortal } from "react-dom";
 import {
   canSnooze,
   effectiveSnoozed,
@@ -203,7 +204,7 @@ import { resolveLocalCheckoutBranchMismatch } from "./BranchToolbar.logic";
 import {
   createSidebarCollisionDetection,
   createSidebarSortingStrategy,
-  restrictBelowSidebarLabel,
+  isOutsideSidebar,
 } from "./Sidebar.drag";
 import { SidebarDragLifecycle, SidebarPointerSensor } from "./Sidebar.pointer";
 import { createSidebarListMotion } from "./Sidebar.motion";
@@ -516,7 +517,7 @@ function SnoozeMenuButton(props: {
 type SortableThreadRowBag = Pick<
   ReturnType<typeof useSortable>,
   "listeners" | "setNodeRef" | "transform" | "transition" | "isDragging"
->;
+> & { isOverlay?: boolean };
 
 function SortableThreadRow(props: {
   id: string;
@@ -534,7 +535,23 @@ function SortableThreadRow(props: {
     () => ({ listeners, setNodeRef, transform, transition, isDragging }),
     [listeners, setNodeRef, transform, transition, isDragging],
   );
-  return props.children(bag);
+  return (
+    <>
+      {props.children(bag)}
+      {isDragging
+        ? createPortal(
+            <DragOverlay
+              dropAnimation={null}
+              modifiers={[restrictToWindowEdges]}
+              style={{ pointerEvents: "none" }}
+            >
+              {props.children({ ...bag, isOverlay: true })}
+            </DragOverlay>,
+            document.body,
+          )
+        : null}
+    </>
+  );
 }
 
 // Unsent work shares one look: the new-thread draft rows and thread rows
@@ -1437,10 +1454,12 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
   const sortable = props.sortable;
   const sortableRootProps = sortable
     ? {
-        ref: sortable.setNodeRef,
+        ref: sortable.isOverlay ? undefined : sortable.setNodeRef,
+        inert: sortable.isOverlay || undefined,
         style: {
-          transform: CSS.Translate.toString(sortable.transform),
-          transition: sortable.transition,
+          transform: sortable.isOverlay ? undefined : CSS.Translate.toString(sortable.transform),
+          transition: sortable.isOverlay ? undefined : sortable.transition,
+          opacity: sortable.isDragging && !sortable.isOverlay ? 0 : undefined,
           // A zero-height boundary also makes dnd-kit scale the source to
           // zero. Only projected peers use scaleY as a visibility sentinel.
           visibility:
@@ -1448,7 +1467,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: {
               ? ("hidden" as const)
               : undefined,
         },
-        ...sortable.listeners,
+        ...(sortable.isOverlay ? {} : sortable.listeners),
       }
     : {};
   const dragDestination =
@@ -3245,10 +3264,13 @@ export default function Sidebar() {
     [unsnoozeThread],
   );
   const threadListRef = useRef<HTMLUListElement | null>(null);
-  const dragLabelOffsetRef = useRef(0);
-  const restrictBelowPins = useCallback<Modifier>(
-    (args) => restrictBelowSidebarLabel(args, dragLabelOffsetRef.current),
+  const getSidebarRect = useCallback(
+    () => threadListRef.current?.closest('[data-sidebar="sidebar"]')?.getBoundingClientRect(),
     [],
+  );
+  const moveThreadOutside = useCallback(
+    (event: PointerEvent) => isOutsideSidebar(event.clientX, getSidebarRect()),
+    [getSidebarRect],
   );
   const listMotionRef = useRef<ReturnType<typeof createSidebarListMotion> | null>(null);
   const attachListMotionRef = useCallback((node: HTMLUListElement | null) => {
@@ -3301,6 +3323,7 @@ export default function Sidebar() {
       onAttach: attachDragSensor,
       onFinish: finishThreadDrag,
       onDropOutside: dropThreadInWorkspace,
+      onMoveOutside: moveThreadOutside,
     }),
   );
   const sectionByThreadKey = useMemo(() => {
@@ -3453,16 +3476,6 @@ export default function Sidebar() {
       }
       // Stop normal section motion before dnd-kit measures the picked-up row.
       listMotionRef.current?.suspend();
-      const list = threadListRef.current;
-      const header = list?.querySelector<HTMLElement>('[data-testid="sidebar-pinned-header"]');
-      if (list && header) {
-        const listRect = list.getBoundingClientRect();
-        const scale = list.offsetWidth > 0 ? listRect.width / list.offsetWidth : 1;
-        dragLabelOffsetRef.current =
-          header.getBoundingClientRect().top - listRect.top + SIDEBAR_DRAG_LABEL_HEIGHT * scale;
-      } else {
-        dragLabelOffsetRef.current = 0;
-      }
       setDragState({
         activeKey,
         activeSection,
@@ -3651,6 +3664,7 @@ export default function Sidebar() {
       {
         items: sidebarListItems,
         activationY: dragActivationY ?? null,
+        getSidebarRect,
       },
     );
   }, [
@@ -3662,6 +3676,7 @@ export default function Sidebar() {
     draggedThreadKey,
     draggedFromSection,
     dragActivationY,
+    getSidebarRect,
     draggableThreadKeys,
     pinnedKeys,
     sidebarListItems,
@@ -4790,11 +4805,6 @@ export default function Sidebar() {
                 }}
                 sensors={dndSensors}
                 collisionDetection={dndCollisionDetection}
-                modifiers={[
-                  restrictToVerticalAxis,
-                  restrictBelowPins,
-                  restrictToFirstScrollableAncestor,
-                ]}
                 onDragStart={handleThreadDragStart}
                 onDragOver={handleThreadDragOver}
                 onDragEnd={handleThreadDragEnd}
@@ -4943,7 +4953,8 @@ export default function Sidebar() {
                           </SortableThreadRow>
                         );
                       };
-                      const from = dragState?.activeSection ?? null;
+                      const from =
+                        dragTargetSection === null ? null : (dragState?.activeSection ?? null);
                       const splitViewRows = [
                         ...pinnedThreads
                           .filter(isSplitViewThread)

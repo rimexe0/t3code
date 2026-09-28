@@ -14,6 +14,13 @@ const hidden = { ...stationary, scaleY: 0 };
 type ThreadItem = Extract<SidebarListItem, { kind: "thread" }>;
 type Layout = Parameters<SortingStrategy>[0];
 
+export function isOutsideSidebar(
+  x: number,
+  rect: Pick<DOMRect, "left" | "right"> | null | undefined,
+) {
+  return rect != null && (x < rect.left || x > rect.right);
+}
+
 /** Keep the lifted card below the Pins label, including when Pins is empty.
  * The container rect follows scrolling; the offset is measured once at pickup. */
 export function restrictBelowSidebarLabel(
@@ -32,6 +39,7 @@ export function createSidebarCollisionDetection(
   options: {
     items?: readonly SidebarListItem[];
     activationY?: number | null;
+    getSidebarRect?: () => Pick<DOMRect, "left" | "right"> | undefined;
   } = {},
 ): CollisionDetection {
   const validity = new Map<string, boolean>();
@@ -39,8 +47,12 @@ export function createSidebarCollisionDetection(
   let previousPointerY = options.activationY;
   let boundarySection: "pinned" | "active" | undefined;
   return (args) => {
-    let collisions = closestCenter(args);
     const pointer = args.pointerCoordinates;
+    if (pointer && isOutsideSidebar(pointer.x, options.getSidebarRect?.())) {
+      previousPointerY = pointer.y;
+      return [];
+    }
+    let collisions = closestCenter(args);
     const items = options.items;
     const source = items?.find((item) => item.kind === "thread" && item.key === args.active.id);
     const boundary = args.droppableContainers
